@@ -1,1 +1,17 @@
-<p>dashboard works!</p>
+<div class="dashboard-container">
+  <header class="dashboard-header">
+    <h1>Welcome to the Dashboard</h1>
+    <button (click)="logout()" class="logout-button">Logout</button>
+  </header>
+
+  <div *ngIf="currentUser" class="user-info">
+    <p><strong>User:</strong> {{ currentUser.user.username }}</p>
+    <p><strong>Email:</strong> {{ currentUser.user.email }}</p>
+    <p><strong>Role:</strong> {{ currentUser.user.role }}</p>
+  </div>
+
+  <div class="dashboard-content">
+    <p>This is a protected dashboard area. More content will go here.</p>
+    <!-- Call logs, analytics charts, etc. will be added here later -->
+  </div>
+</div>

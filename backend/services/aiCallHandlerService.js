@@ -105,6 +105,8 @@ async function listenForCustomerInput(callId) {
     // This part needs to be fleshed out with actual Asterisk event handling.
     console.log(`AI Call Handler: [${callId}] Conceptual: Waiting for customer speech... This part needs event-driven implementation.`);
     // For demonstration, let's assume a function handleUserSpeech(callId, audioFilePath) is called externally.
+    // Instead, we will now directly try to record and process.
+    await processNextAiTurn(callId); // Start the first AI turn (listening)
 
   } catch (error) {
     console.error(`AI Call Handler: [${callId}] Error in listening phase:`, error);
@@ -113,86 +115,115 @@ async function listenForCustomerInput(callId) {
 }
 
 /**
- * Called when customer speech is detected and recorded.
+ * Processes a full turn of AI interaction: Listen -> STT -> LLM -> TTS -> Listen again or End.
  * @param {string} callId The call ID.
- * @param {string} audioFilePath Path to the recorded audio file.
+ * @param {string} [aiPromptToSpeakFirst] Optional TTS prompt before listening.
  */
-async function handleCustomerSpeech(callId, audioFilePath) {
+async function processNextAiTurn(callId, aiPromptToSpeakFirst = null) {
     const callData = activeAICalls.get(callId);
-    if (!callData || callData.state === CALL_STATE.ENDED) return;
-
-    console.log(`AI Call Handler: [${callId}] Processing customer speech from ${audioFilePath}`);
-    updateCallState(callId, CALL_STATE.PROCESSING_STT);
+    if (!callData || callData.state === CALL_STATE.ENDED || callData.state === CALL_STATE.ESCALATING) return;
 
     try {
-        const transcriptionResult = await sttService.transcribeAudio(audioFilePath, callData.language); // Pass language
-        // Assuming transcriptionResult = { text: "...", segments: [...], language: "detected_lang_code" }
-        const customerText = transcriptionResult.text ? transcriptionResult.text.trim() : "";
-        const detectedLanguage = transcriptionResult.language || callData.language; // Prefer detected, fallback to call's language
+        if (aiPromptToSpeakFirst) {
+            updateCallState(callId, CALL_STATE.SPEAKING);
+            await ttsService.speakOnChannel(callData.channel, aiPromptToSpeakFirst, callId, callData.language);
+            // llmService already logs AI responses, but this is a direct prompt
+            await callService.createTranscript({
+                call_id: callId, speaker: 'ai', text: aiPromptToSpeakFirst,
+                timestamp_start: 0, timestamp_end: 0, language: callData.language
+            });
+            callData.history.push({ speaker: 'ai', text: aiPromptToSpeakFirst, language: callData.language });
+        }
 
-        console.log(`AI Call Handler: [${callId}] STT Result (lang: ${detectedLanguage}): "${customerText}"`);
+        console.log(`AI Call Handler: [${callId}] Entering LISTENING state.`);
+        updateCallState(callId, CALL_STATE.LISTENING);
 
-        if (!customerText) {
-            console.log(`AI Call Handler: [${callId}] Empty transcription. Maybe play a 'did not understand' message.`);
-            // Use callData.language for TTS prompt here as detectedLanguage might be unreliable if text is empty
-            await ttsService.speakOnChannel(callData.channel, "Sorry, I didn't catch that. Could you please repeat?", callId, callData.language);
-            await listenForCustomerInput(callId); // Go back to listening
+        // Record customer's utterance
+        // The duration might need to be dynamic or configurable
+        const recordingDurationMs = parseInt(process.env.CUSTOMER_UTTERANCE_DURATION_MS || "7000");
+        const audioFilePath = await sttService.recordUtterance(callData.channel, callId, recordingDurationMs);
+
+        if (!audioFilePath) {
+            console.warn(`AI Call Handler: [${callId}] No audio file path returned from recording. Assuming no input.`);
+            // Potentially play a "didn't hear anything" message and retry or hang up after N attempts.
+            await ttsService.speakOnChannel(callData.channel, "I didn't hear anything. Please try again.", callId, callData.language);
+            await processNextAiTurn(callId); // Retry listening
             return;
         }
 
-        // Log customer transcript
+        console.log(`AI Call Handler: [${callId}] Processing customer speech from ${audioFilePath}`);
+        updateCallState(callId, CALL_STATE.PROCESSING_STT);
+
+        const transcriptionResult = await sttService.transcribeAudio(audioFilePath, callData.language);
+        const customerText = transcriptionResult.text ? transcriptionResult.text.trim() : "";
+        const detectedLanguage = transcriptionResult.language || callData.language;
+
+        console.log(`AI Call Handler: [${callId}] STT Result (lang: ${detectedLanguage}): "${customerText}"`);
+
+        // Clean up the recorded audio file
+        try {
+            await fs.promises.unlink(audioFilePath);
+            console.log(`AI Call Handler: [${callId}] Deleted temporary recording ${audioFilePath}`);
+        } catch (unlinkError) {
+            console.error(`AI Call Handler: [${callId}] Error deleting temporary recording ${audioFilePath}:`, unlinkError);
+        }
+
+        if (!customerText) {
+            console.log(`AI Call Handler: [${callId}] Empty transcription.`);
+            await handleAiTurnError(callId, "Sorry, I didn't catch that. Could you please repeat?");
+            return;
+        }
+
         await callService.createTranscript({
             call_id: callId,
             speaker: 'customer',
             text: customerText,
-            timestamp_start: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[0].start : 0, // Example: use first segment start
-            timestamp_end: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[transcriptionResult.segments.length -1].end : 0, // Example: use last segment end
-            language: detectedLanguage, // Log detected language
-            // confidence_score: segment.avg_logprob ? Math.exp(segment.avg_logprob) : null, // if available per segment
+            timestamp_start: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[0].start : 0,
+            timestamp_end: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[transcriptionResult.segments.length -1].end : 0,
+            language: detectedLanguage,
         });
         callData.history.push({ speaker: 'customer', text: customerText, language: detectedLanguage });
         updateCallState(callId, CALL_STATE.QUERYING_LLM);
 
-        // Query LLM
-        // Pass conversation history and customer identifier for plan context
+        // Construct prompt for LLM, potentially including history
+        let llmPrompt = "";
+        // Simple history concatenation, could be more sophisticated
+        callData.history.slice(-5).forEach(turn => { // Last 5 turns
+            llmPrompt += `${turn.speaker === 'ai' ? 'AI' : 'Customer'}: ${turn.text}\n`;
+        });
+        // The current customerText is already the last item in history if added above.
+        // Or, if not adding to history until after LLM, use: llmPrompt += `Customer: ${customerText}\nAI:`;
+
         const llmResponseText = await llmService.queryLLM(
-            customerText,
+            customerText, // Or use the constructed llmPrompt if including history
             callId,
-            callData.callerIdNum, // Pass customer identifier
-            {
-                // context: callData.llmContext, // If managing context for Ollama
-                // system: `You are a helpful assistant. The customer is speaking ${detectedLanguage}.` // Inform LLM of language
-                // Plan context is now added within llmService
-            }
+            callData.callerIdNum,
+            { /* options like system prompt if not handled in llmService already */ }
         );
-        // callData.llmContext = llmResponse.context; // Update context for Ollama if used
 
         updateCallState(callId, CALL_STATE.GENERATING_TTS);
-
-        // Generate and play TTS, using the language of the LLM's response (assume it matches customer or is desired)
-        // Or, explicitly use callData.language for TTS if LLM response language is not guaranteed.
-        // For simplicity, assume LLM responds in a way that callData.language is appropriate for TTS.
         await ttsService.speakOnChannel(callData.channel, llmResponseText, callId, callData.language);
-        // AI's response is already logged to transcript by llmService.queryLLM if it's configured to do so.
-        // If llmService doesn't log its own response, log it here.
-        // Let's assume llmService logs its own response as an 'ai' transcript.
-        // We still add to local history for context.
-        callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language /* assuming AI responds in this lang */ });
+        callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language });
 
-
-        // TODO: Check for end-of-conversation cues from LLM or other logic
-        // For now, always go back to listening
-        await listenForCustomerInput(callId);
+        // Check for escalation trigger or end of call from LLM response
+        if (llmResponseText.toLowerCase().includes("transfer to agent") || llmResponseText.toLowerCase().includes("speak to a representative")) {
+            await escalateCall(callId, "llm_request_escalation");
+        } else if (llmResponseText.toLowerCase().includes("goodbye") || llmResponseText.toLowerCase().includes("thank you for calling")) {
+            await endAiCall(callId, "completed_by_ai");
+        } else {
+            // Loop back for next turn
+            await processNextAiTurn(callId);
+        }
 
     } catch (error) {
-        console.error(`AI Call Handler: [${callId}] Error processing customer speech:`, error);
-        await handleAiTurnError(callId, "Sorry, I encountered an issue. Please try again.");
+        console.error(`AI Call Handler: [${callId}] Error in AI turn:`, error);
+        await handleAiTurnError(callId, "I'm having trouble processing your request right now. Please try again in a moment.");
     }
 }
 
 
 /**
- * Handles errors during an AI turn, plays an error message, and returns to listening.
+ * Handles errors during an AI turn, plays an error message, and returns to listening or ends call.
  * @param {string} callId
  * @param {string} errorMessageToSpeak
  */
@@ -201,14 +232,26 @@ async function handleAiTurnError(callId, errorMessageToSpeak) {
   if (!callData || callData.state === CALL_STATE.ENDED) return;
 
   try {
-    await ttsService.speakOnChannel(callData.channel, errorMessageToSpeak, callId, callData.language);
-    await callService.createTranscript({ call_id: callId, speaker: 'ai', text: errorMessageToSpeak, timestamp_start: 0, timestamp_end: 0 });
-    callData.history.push({ speaker: 'ai', text: errorMessageToSpeak });
+    // Avoid speaking if already escalating or ending
+    if (callData.state !== CALL_STATE.ESCALATING && callData.state !== CALL_STATE.ENDED) {
+        updateCallState(callId, CALL_STATE.SPEAKING); // AI is speaking an error
+        await ttsService.speakOnChannel(callData.channel, errorMessageToSpeak, callId, callData.language);
+        await callService.createTranscript({ call_id: callId, speaker: 'ai', text: errorMessageToSpeak, timestamp_start: 0, timestamp_end: 0, language: callData.language });
+        callData.history.push({ speaker: 'ai', text: errorMessageToSpeak, language: callData.language });
+    }
   } catch (ttsError) {
     console.error(`AI Call Handler: [${callId}] Critical error: Failed to play error message via TTS:`, ttsError);
   }
-  // After error, attempt to go back to listening or end call if too many errors
-  await listenForCustomerInput(callId);
+
+  // Decide whether to retry or end the call
+  // For now, let's retry once, then end if error persists (simple example)
+  callData.errorCount = (callData.errorCount || 0) + 1;
+  if (callData.errorCount > 1) {
+      console.warn(`AI Call Handler: [${callId}] Multiple errors, ending call.`);
+      await endAiCall(callId, 'error_max_retries');
+  } else if (callData.state !== CALL_STATE.ESCALATING && callData.state !== CALL_STATE.ENDED) {
+      await processNextAiTurn(callId); // Try another turn (listen again)
+  }
 }
 
 /**

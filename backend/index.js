@@ -96,5 +96,14 @@ const gracefulShutdown = () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
+// Swagger API Documentation Setup
+// Ensure swagger-jsdoc and swagger-ui-express are installed:
+// npm install swagger-jsdoc swagger-ui-express
+const swaggerUi = require('swagger-ui-express');
+const swaggerSpec = require('./swaggerDef'); // Your swagger definition
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+console.log(`API documentation available at /api-docs`);
+
 
 module.exports = app; // For potential testing

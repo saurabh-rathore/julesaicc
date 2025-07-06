@@ -29,77 +29,82 @@ const ensureRecordingPathExists = async () => {
  * Starts recording a channel using Asterisk's Monitor command.
  * @param {string} channel - The channel to record (e.g., 'SIP/somepeer-000000a1').
  * @param {string} callId - The unique ID of the call, used for naming the recording.
+ * @param {number} durationMs - Duration to record in milliseconds.
  * @returns {Promise<string>} The path to the recorded audio file.
  */
-const startRecording = async (channel, callId) => {
+const recordUtterance = async (channel, callId, durationMs = 7000) => {
   await ensureRecordingPathExists();
-  // Filename: callId_timestamp.wav (or .gsm, .ulaw etc. depending on Asterisk config)
-  // Asterisk's Monitor command typically names files based on uniqueid and timestamp.
-  // We'll use callId to make it easier to associate.
-  // The format 'wav' is common, but Asterisk might record in others (gsm, ulaw, etc.)
-  // Whisper prefers wav, mp3, m4a, etc. Conversion might be needed.
-  // For now, let's assume Asterisk produces a compatible format or we handle conversion later.
 
-  // Using uniqueid from Asterisk channel might be more direct if callId is not the channel's uniqueid
-  const recordingFileBaseName = `${callId}_${Date.now()}`;
-  const recordingFileName = `${recordingFileBaseName}.wav`; // Desired format for Whisper
+  const recordingFileBaseName = `${callId}_utterance_${Date.now()}`;
+  // Asterisk's Record action saves the file with the specified extension.
+  const recordingFileName = `${recordingFileBaseName}.wav`;
   const fullRecordingPath = path.join(RECORDING_PATH, recordingFileName);
 
-  // The 'Monitor' action usually takes file format as the second parameter,
-  // and filename as the third. Mixing can be done with 'm' option.
-  // Format: wav, File: /path/to/file (without extension, Asterisk adds it)
-  // Options: m (mix) b (bridge)
+  // Action: Record
+  // File: The filename for the recording.
+  // Format: The format to record in (e.g., gsm, wav, etc.).
+  // Timeout: Maximum recording time in milliseconds. Use -1 for no timeout.
+  // MaxSilence: Seconds of silence to allow before hanging up. Use 0 to disable.
+  // Beep: Play a beep before recording (true/false or filename of beep).
+  // EscapeDigits: Digits that can be pressed to terminate the recording.
   const action = {
-    action: 'Monitor',
+    action: 'Record',
     channel: channel,
-    file: path.join(RECORDING_PATH, recordingFileBaseName), // Asterisk will append .wav or other format
-    format: 'wav', // Specify wav format if possible
-    mix: 'true', // Mix both legs of the call into one file
+    file: fullRecordingPath, // Full path including extension for Record action
+    format: 'wav',       // Desired format for Whisper
+    timeout: durationMs.toString(),  // Max recording time in ms
+    maxsilence: '3',     // Max seconds of silence before stopping (e.g., 3 seconds)
+    beep: 'true',        // Play a beep
+    overwrite: 'true',   // Overwrite if file exists (should be unique due to timestamp anyway)
+    // escapeDigits: '#' // Example: allow user to press # to end recording
   };
 
-  console.log(`STT Service: Starting recording for channel ${channel}, file base: ${recordingFileBaseName}`);
+  console.log(`STT Service: Starting utterance recording for channel ${channel}, file: ${recordingFileName}, duration: ${durationMs}ms`);
   try {
     const response = await amiService.sendAction(action);
-    if (response.response === 'Success') {
-      console.log(`STT Service: Recording started successfully for channel ${channel}. File will be ~${fullRecordingPath}`);
-      // Note: Monitor command starts recording. We'll need a way to stop it or know when it's done (e.g., on Hangup event).
-      // The actual filename might slightly differ (e.g., with -in/-out suffixes if not mixed properly).
-      // We will assume for now it creates a single mixed file or we handle the specific output later.
-      return fullRecordingPath; // This is the *intended* path, actual might vary slightly.
+    // The 'Record' action is asynchronous in Asterisk. The AMI response indicates if the action was accepted.
+    // It doesn't wait for the recording to finish.
+    // We need to rely on the timeout or maxsilence, or listen for specific AMI events if 'Record' generates them upon completion.
+    // For simplicity here, we assume the file will be there after timeout + a small buffer.
+    // A more robust solution might involve checking for file existence or an event.
+    if (response.response === 'Success' || response.message.includes('started')) { // Success varies by Asterisk version
+      console.log(`STT Service: Utterance recording initiated for channel ${channel}. Waiting for ${durationMs}ms.`);
+      // Wait for the recording duration + a small buffer for file writing
+      await new Promise(resolve => setTimeout(resolve, durationMs + 1000));
+
+      // Check if file was created (basic check)
+      try {
+        await fs.access(fullRecordingPath);
+        console.log(`STT Service: Recording ${fullRecordingPath} presumed complete.`);
+        return fullRecordingPath;
+      } catch (fileError) {
+        console.error(`STT Service: Recording file ${fullRecordingPath} not found after timeout.`);
+        throw new Error(`Recording file not found after timeout: ${fullRecordingPath}`);
+      }
     } else {
-      console.error('STT Service: Failed to start recording via AMI:', response);
-      throw new Error(`AMI Monitor command failed: ${response.message}`);
+      console.error('STT Service: Failed to initiate recording via AMI Record action:', response);
+      throw new Error(`AMI Record command failed: ${response.message}`);
     }
   } catch (error) {
-    console.error(`STT Service: Error sending Monitor command to AMI for channel ${channel}:`, error);
+    console.error(`STT Service: Error sending Record command to AMI for channel ${channel}:`, error);
     throw error;
   }
 };
 
-/**
- * Stops recording a channel.
- * @param {string} channel - The channel to stop recording.
- * @returns {Promise<void>}
- */
-const stopRecording = async (channel) => {
-  const action = {
-    action: 'StopMonitor',
-    channel: channel,
-  };
-  console.log(`STT Service: Attempting to stop recording for channel ${channel}`);
-  try {
-    const response = await amiService.sendAction(action);
-    if (response.response === 'Success') {
-      console.log(`STT Service: Recording stopped successfully for channel ${channel}.`);
-    } else {
-      // It's not always an error if StopMonitor fails (e.g., if already stopped or no monitor active)
-      console.warn(`STT Service: StopMonitor command for channel ${channel} reported: ${response.message}`);
-    }
-  } catch (error) {
-    console.error(`STT Service: Error sending StopMonitor command to AMI for channel ${channel}:`, error);
-    // Don't necessarily throw here, as the call might have hung up already.
-  }
-};
+// Monitor based recording (can be kept for full call recording if needed)
+// /**
+//  * Starts recording a channel using Asterisk's Monitor command.
+//  * @param {string} channel - The channel to record (e.g., 'SIP/somepeer-000000a1').
+//  * @param {string} callId - The unique ID of the call, used for naming the recording.
+//  * @returns {Promise<string>} The path to the recorded audio file.
+//  */
+// const startRecording = async (channel, callId) => { ... existing startRecording code ... };
+// /**
+//  * Stops recording a channel.
+//  * @param {string} channel - The channel to stop recording.
+//  * @returns {Promise<void>}
+//  */
+// const stopRecording = async (channel) => { ... existing stopRecording code ... };
 
 
 /**

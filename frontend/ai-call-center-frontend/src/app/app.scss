@@ -1,0 +1,322 @@
+/* Global styles for the application can go here or in styles.scss */
+
+/* Styles for app.component.html */
+.app-header {
+  background-color: #333;
+  padding: 10px 20px;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+
+  nav {
+    display: flex;
+    gap: 20px;
+
+    a {
+      color: white;
+      text-decoration: none;
+      padding: 8px 12px;
+      border-radius: 4px;
+      transition: background-color 0.2s ease-in-out;
+
+      &:hover {
+        background-color: #555;
+      }
+
+      &.active-link {
+        background-color: #007bff;
+        font-weight: bold;
+      }
+    }
+
+    .logout-button-header {
+      background-color: #007bff;
+      color: white;
+      border: none;
+      padding: 8px 15px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.9em;
+      margin-left: auto; /* Pushes logout button to the right if nav is taking full width */
+
+      &:hover {
+        background-color: #0056b3;
+      }
+    }
+  }
+}
+
+.app-content {
+  padding: 20px;
+  margin-top: 60px; /* Adjust if header height changes */
+}
+
+.app-footer {
+  text-align: center;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-top: 1px solid #e7e7e7;
+  color: #6c757d;
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+}
+
+/* Basic form styling (can be in a global styles.scss or component-specific) */
+.form-group {
+  margin-bottom: 1rem;
+
+  label {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  textarea,
+  select {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    box-sizing: border-box;
+  }
+
+  .invalid-feedback {
+    color: #dc3545;
+    font-size: 0.875em;
+    margin-top: 0.25rem;
+  }
+
+  input.is-invalid {
+    border-color: #dc3545;
+  }
+}
+
+button[type="submit"] {
+  padding: 0.5rem 1rem;
+  color: #fff;
+  background-color: #007bff;
+  border-color: #007bff;
+  border-radius: 0.25rem;
+  cursor: pointer;
+
+  &:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+  }
+  &:disabled {
+    background-color: #6c757d;
+    border-color: #6c757d;
+    cursor: not-allowed;
+  }
+}
+
+.error-message {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+  padding: 0.75rem 1.25rem;
+  margin-top: 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+}
+
+.loading-indicator {
+  text-align: center;
+  padding: 20px;
+  font-style: italic;
+}
+h1, h2, h3, h4, h5, h6 {
+  font-family: "Inter Tight", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+    Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji",
+    "Segoe UI Symbol";
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%; /* Ensure html and body take full height */
+}
+:host {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh; /* Ensure app-root takes at least full viewport height */
+}
+
+.app-content {
+  flex-grow: 1; /* Allows content to take up available space, pushing footer down */
+  padding: 20px;
+  margin-top: 60px; /* Adjust if header height changes, should match header height */
+}
+/* Ensure the global styles from angular.json (like styles.scss) are also applied */
+/* These are some generic styles, they might conflict or complement styles.scss from project root */
+/* It's generally better to have one main global style file (e.g. src/styles.scss) */
+
+/* Resetting some default styles for consistency */
+body, h1, h2, h3, h4, h5, h6, p, ul, ol, li, figure, figcaption, blockquote, dl, dd {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  background-color: #f4f7f6; /* A very light gray background */
+  color: #333;
+}
+
+/* Main application container - useful if app-root is not body */
+/* app-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+} */
+
+.app-header {
+  background-color: #2c3e50; /* Dark blue-gray */
+  color: #ecf0f1; /* Light gray text */
+  padding: 1rem 2rem;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  height: 60px; /* Fixed header height */
+  position: fixed; /* Fixed header */
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000; /* Ensure header is above other content */
+}
+
+.app-header nav {
+  display: flex;
+  gap: 1.5rem; /* Spacing between nav items */
+}
+
+.app-header nav a {
+  color: #ecf0f1;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.app-header nav a:hover,
+.app-header nav a.active-link {
+  background-color: #3498db; /* A pleasant blue */
+  color: #fff;
+}
+
+.app-header .logout-button-header {
+  background-color: #e74c3c; /* A shade of red */
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+.app-header .logout-button-header:hover {
+  background-color: #c0392b; /* Darker red */
+}
+
+.app-content {
+  padding-top: 80px; /* Header height + some padding: 60px + 20px */
+  padding-bottom: 60px; /* Footer height + some padding, if footer is fixed */
+  flex-grow: 1; /* Makes content fill available space */
+  margin-left: 2rem; /* General page margin */
+  margin-right: 2rem; /* General page margin */
+}
+
+/* Global error message styling */
+.error-message {
+  color: #c0392b; /* Darker red for errors */
+  background-color: #fdd; /* Light pink background */
+  border: 1px solid #fbb;
+  padding: 1rem;
+  margin: 1rem 0;
+  border-radius: 4px;
+  text-align: center;
+}
+
+/* Global loading indicator styling */
+.loading-indicator {
+  text-align: center;
+  padding: 2rem;
+  font-size: 1.2em;
+  color: #3498db;
+}
+
+/* Basic Table Styling (can be overridden by component styles) */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 1rem;
+  background-color: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+table th, table td {
+  border: 1px solid #e0e0e0; /* Lighter borders */
+  padding: 0.75rem;
+  text-align: left;
+}
+
+table th {
+  background-color: #f2f7fc; /* Light blue-gray for headers */
+  font-weight: 600;
+  color: #333;
+}
+
+table tbody tr:nth-child(even) {
+  background-color: #f8f9fa; /* Very light gray for even rows */
+}
+
+table tbody tr:hover {
+  background-color: #e9ecef; /* Slightly darker gray on hover */
+}
+
+/* Basic Button Styling */
+button, .button {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  text-align: center;
+  text-decoration: none;
+  vertical-align: middle;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  transition: color .15s ease-in-out,background-color .15s ease-in-out,border-color .15s ease-in-out,box-shadow .15s ease-in-out;
+}
+
+button.primary, .button.primary {
+  color: #fff;
+  background-color: #007bff;
+  border-color: #007bff;
+}
+button.primary:hover {
+  background-color: #0056b3;
+  border-color: #0056b3;
+}
+
+button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+/* Center content if app-root is not full width (less common for root component) */
+/*
+:host {
+  display: block;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+*/

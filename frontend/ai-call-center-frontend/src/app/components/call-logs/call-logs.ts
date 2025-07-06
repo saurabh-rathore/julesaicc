@@ -20,7 +20,7 @@ export class CallLogsComponent implements OnInit { // Changed class name
   itemsPerPage: number = 10;
   // Add other filter properties here if needed (e.g., status, date range)
 
-  constructor(private callService: CallService) {}
+  constructor(private callService: CallService, private router: Router) {} // Inject Router
 
   ngOnInit(): void {
     this.loadCalls();
@@ -76,8 +76,7 @@ export class CallLogsComponent implements OnInit { // Changed class name
 
   viewCallDetails(callId: string): void {
     // For now, just log to console. Later, this will navigate to a detail page or open a modal.
-    console.log('View details for call ID:', callId);
-    // Example navigation: this.router.navigate(['/calls', callId]);
-    // Or set a selectedCall property to display in a modal.
+    // console.log('View details for call ID:', callId);
+    this.router.navigate(['/calls', callId]);
   }
 }

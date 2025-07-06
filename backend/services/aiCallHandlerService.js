@@ -1,12 +1,13 @@
+const fs = require('fs').promises; // Added for unlink
 const amiService = require('./amiService');
 const sttService = require('./sttService');
 const llmService = require('./llmService');
 const ttsService = require('./ttsService');
 const callService = require('./callService'); // To update call status, log transcripts
+const customerPlanService = require('./customerPlanService'); // Added for plan lookup
 
 // In-memory store for active AI calls and their state
-// In a production system, this might be backed by Redis or a database for scalability and persistence
-const activeAICalls = new Map(); // Key: callId (or channelId), Value: { callId, channel, language, state, history, ... }
+const activeAICalls = new Map();
 
 // Call States
 const CALL_STATE = {
@@ -59,119 +60,82 @@ async function startAiCall(callId, channel, callerIdNum, language = 'en') {
     await callService.createTranscript({ call_id: callId, speaker: 'ai', text: greetingText, timestamp_start: 0, timestamp_end: 0 /* TODO: Actual timing */ });
     activeAICalls.get(callId).history.push({ speaker: 'ai', text: greetingText });
 
-    // 3. Transition to listening state
-    await listenForCustomerInput(callId);
+    // 3. Set AI_CALL_ACTIVE=true via AMI and transition to LISTENING state.
+    // The dialplan will then take over and call the AGI script.
+    await amiService.sendAction({
+        action: 'SetVar',
+        channel: channel,
+        variable: 'AI_CALL_ACTIVE',
+        value: 'true'
+    });
+    console.log(`AI Call Handler: [${callId}] Set AI_CALL_ACTIVE=true on channel ${channel}`);
+
+    updateCallState(callId, CALL_STATE.LISTENING);
+    console.log(`AI Call Handler: [${callId}] Call initiated, greeting played. State: LISTENING. Dialplan should now invoke AGI script.`);
 
   } catch (error) {
-    console.error(`AI Call Handler: Error starting call ${callId}:`, error);
-    await endAiCall(callId, 'error');
+    console.error(`AI Call Handler: [${callId}] Error in initial AI call setup:`, error);
+    await endAiCall(callId, 'error_setup', channel); // Pass channel for potential hangup
   }
 }
 
+// Remove listenForCustomerInput as its logic is merged into AGI flow
+// async function listenForCustomerInput(callId) { ... }
+
+// Renamed handleCustomerSpeech to processRecordedAudio and it's now the main entry point after AGI.
 /**
- * Manages the state of listening for customer input.
- * @param {string} callId - The ID of the call.
- */
-async function listenForCustomerInput(callId) {
-  const callData = activeAICalls.get(callId);
-  if (!callData || callData.state === CALL_STATE.ENDED) return;
-
-  console.log(`AI Call Handler: [${callId}] Listening for customer input.`);
-  updateCallState(callId, CALL_STATE.LISTENING);
-
-  try {
-    // Start recording - this needs a robust way to manage segment filenames and know when customer stops speaking.
-    // For now, this is a simplified placeholder. VAD or explicit stop signal is needed.
-    // The sttService.startRecording might need to return the actual filename determined by Asterisk.
-    const recordingFileNameBase = `${callId}_customer_${Date.now()}`;
-    // This is conceptual; actual recording path determination is complex.
-    // Let's assume sttService.startRecording gives us a promise that resolves when recording is ready for STT.
-    // Or, better, an event-driven approach where Asterisk signals end of speech.
-
-    // TODO: This is a placeholder for a more complex VAD or speech detection mechanism.
-    // For now, we'll simulate a recording period and then process.
-    // In a real system, an AMI event (e.g., from Dialplan's SpeechBackground or VAD detection)
-    // would trigger the next step.
-
-    // Example: Using a simplified 'processAudioSegment' which internally handles start/stop/transcribe
-    // This is highly conceptual and needs proper integration with Asterisk events for start/stop.
-    // For this placeholder, let's assume processAudioSegment is called after some speech is detected.
-    // We'll manually call a "pretend" audio processing function.
-    // This function would typically be invoked by an event from Asterisk (e.g., end of speech detected by VAD).
-
-    // Placeholder: Simulate waiting for customer to speak and then processing.
-    // In a real app, this would be event-driven (e.g., AMI event for end-of-speech).
-    // For now, let's assume we get a trigger to process a hypothetical recording.
-    // This part needs to be fleshed out with actual Asterisk event handling.
-    console.log(`AI Call Handler: [${callId}] Conceptual: Waiting for customer speech... This part needs event-driven implementation.`);
-    // For demonstration, let's assume a function handleUserSpeech(callId, audioFilePath) is called externally.
-    // Instead, we will now directly try to record and process.
-    await processNextAiTurn(callId); // Start the first AI turn (listening)
-
-  } catch (error) {
-    console.error(`AI Call Handler: [${callId}] Error in listening phase:`, error);
-    await handleAiTurnError(callId, "Failed to start listening.");
-  }
-}
-
-/**
- * Processes a full turn of AI interaction: Listen -> STT -> LLM -> TTS -> Listen again or End.
+ * Processes the recorded audio file after AGI script signals completion via internal API.
+ * This function contains the STT, LLM, TTS logic for an AI turn.
  * @param {string} callId The call ID.
- * @param {string} [aiPromptToSpeakFirst] Optional TTS prompt before listening.
+ * @param {string} audioFilePath Path to the recorded audio file.
+ * @param {string} agiDetectedLanguage Language detected or passed by AGI.
  */
-async function processNextAiTurn(callId, aiPromptToSpeakFirst = null) {
+async function processRecordedAudio(callId, audioFilePath, agiDetectedLanguage) {
     const callData = activeAICalls.get(callId);
-    if (!callData || callData.state === CALL_STATE.ENDED || callData.state === CALL_STATE.ESCALATING) return;
+    if (!callData || callData.state === CALL_STATE.ENDED || callData.state === CALL_STATE.ESCALATING) {
+        console.warn(`AI Call Handler: [${callId}] Received recording for an inactive/ended call. Path: ${audioFilePath}`);
+        if (audioFilePath) {
+            try { await fs.unlink(audioFilePath); } catch (e) { console.error(`AI Call Handler: Error unlinking orphaned recording ${audioFilePath}`, e); }
+        }
+        return;
+    }
+
+    // Use language from AGI if available, otherwise fallback to call's initial language
+    const currentLanguage = agiDetectedLanguage || callData.language;
+    if (callData.language !== currentLanguage) {
+        console.log(`AI Call Handler: [${callId}] Language for this turn set to: ${currentLanguage} (was ${callData.language})`);
+        callData.language = currentLanguage;
+    }
+
+    console.log(`AI Call Handler: [${callId}] Processing recorded audio: ${audioFilePath} for language: ${callData.language}`);
+    updateCallState(callId, CALL_STATE.PROCESSING_STT);
 
     try {
-        if (aiPromptToSpeakFirst) {
-            updateCallState(callId, CALL_STATE.SPEAKING);
-            await ttsService.speakOnChannel(callData.channel, aiPromptToSpeakFirst, callId, callData.language);
-            // llmService already logs AI responses, but this is a direct prompt
-            await callService.createTranscript({
-                call_id: callId, speaker: 'ai', text: aiPromptToSpeakFirst,
-                timestamp_start: 0, timestamp_end: 0, language: callData.language
-            });
-            callData.history.push({ speaker: 'ai', text: aiPromptToSpeakFirst, language: callData.language });
-        }
-
-        console.log(`AI Call Handler: [${callId}] Entering LISTENING state.`);
-        updateCallState(callId, CALL_STATE.LISTENING);
-
-        // Record customer's utterance
-        // The duration might need to be dynamic or configurable
-        const recordingDurationMs = parseInt(process.env.CUSTOMER_UTTERANCE_DURATION_MS || "7000");
-        const audioFilePath = await sttService.recordUtterance(callData.channel, callId, recordingDurationMs);
-
-        if (!audioFilePath) {
-            console.warn(`AI Call Handler: [${callId}] No audio file path returned from recording. Assuming no input.`);
-            // Potentially play a "didn't hear anything" message and retry or hang up after N attempts.
-            await ttsService.speakOnChannel(callData.channel, "I didn't hear anything. Please try again.", callId, callData.language);
-            await processNextAiTurn(callId); // Retry listening
-            return;
-        }
-
-        console.log(`AI Call Handler: [${callId}] Processing customer speech from ${audioFilePath}`);
-        updateCallState(callId, CALL_STATE.PROCESSING_STT);
-
         const transcriptionResult = await sttService.transcribeAudio(audioFilePath, callData.language);
         const customerText = transcriptionResult.text ? transcriptionResult.text.trim() : "";
-        const detectedLanguage = transcriptionResult.language || callData.language;
+        // Use language from STT result if available, otherwise stick with currentLanguage
+        const sttLanguage = transcriptionResult.language || callData.language;
 
-        console.log(`AI Call Handler: [${callId}] STT Result (lang: ${detectedLanguage}): "${customerText}"`);
+        console.log(`AI Call Handler: [${callId}] STT Result (lang: ${sttLanguage}): "${customerText}"`);
 
-        // Clean up the recorded audio file
-        try {
-            await fs.promises.unlink(audioFilePath);
-            console.log(`AI Call Handler: [${callId}] Deleted temporary recording ${audioFilePath}`);
-        } catch (unlinkError) {
-            console.error(`AI Call Handler: [${callId}] Error deleting temporary recording ${audioFilePath}:`, unlinkError);
+        if (audioFilePath) {
+            try {
+                await fs.unlink(audioFilePath);
+                console.log(`AI Call Handler: [${callId}] Deleted temporary recording ${audioFilePath}`);
+            } catch (unlinkError) {
+                console.error(`AI Call Handler: [${callId}] Error deleting temp recording ${audioFilePath}:`, unlinkError);
+            }
         }
 
         if (!customerText) {
-            console.log(`AI Call Handler: [${callId}] Empty transcription.`);
-            await handleAiTurnError(callId, "Sorry, I didn't catch that. Could you please repeat?");
-            return;
+            console.log(`AI Call Handler: [${callId}] Empty transcription from STT.`);
+            // Play "didn't understand" and set state to LISTENING. Dialplan loop will re-trigger AGI.
+            await ttsService.speakOnChannel(callData.channel, process.env.DID_NOT_UNDERSTAND_MESSAGE || "Sorry, I didn't catch that. Could you please repeat?", callId, callData.language);
+            await callService.createTranscript({ call_id: callId, speaker: 'ai', text: process.env.DID_NOT_UNDERSTAND_MESSAGE || "Sorry, I didn't catch that. Could you please repeat?", timestamp_start: 0, timestamp_end: 0, language: callData.language });
+            callData.history.push({ speaker: 'ai', text: process.env.DID_NOT_UNDERSTAND_MESSAGE || "Sorry, I didn't catch that. Could you please repeat?", language: callData.language });
+            updateCallState(callId, CALL_STATE.LISTENING);
+            console.log(`AI Call Handler: [${callId}] Awaiting next customer input via AGI after empty/failed transcription.`);
+            return; // Dialplan will loop back to AGI
         }
 
         await callService.createTranscript({
@@ -180,61 +144,68 @@ async function processNextAiTurn(callId, aiPromptToSpeakFirst = null) {
             text: customerText,
             timestamp_start: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[0].start : 0,
             timestamp_end: transcriptionResult.segments && transcriptionResult.segments.length > 0 ? transcriptionResult.segments[transcriptionResult.segments.length -1].end : 0,
-            language: detectedLanguage,
+            language: sttLanguage,
         });
-        callData.history.push({ speaker: 'customer', text: customerText, language: detectedLanguage });
+        callData.history.push({ speaker: 'customer', text: customerText, language: sttLanguage });
         updateCallState(callId, CALL_STATE.QUERYING_LLM);
 
-        // Construct prompt for LLM, potentially including history
-        let llmPrompt = "";
-        // Simple history concatenation, could be more sophisticated
-        callData.history.slice(-5).forEach(turn => { // Last 5 turns
-            llmPrompt += `${turn.speaker === 'ai' ? 'AI' : 'Customer'}: ${turn.text}\n`;
-        });
-        // The current customerText is already the last item in history if added above.
-        // Or, if not adding to history until after LLM, use: llmPrompt += `Customer: ${customerText}\nAI:`;
+        // Construct system prompt with customer plan context
+        let systemPrompt = `You are a helpful AI assistant for a telecom company. The customer is speaking ${sttLanguage}.`;
+        try {
+            const plan = await customerPlanService.findCustomerPlanByIdentifier(callData.callerIdNum);
+            if (plan) {
+                systemPrompt += ` The customer's current plan is "${plan.plan_name}". Plan details: ${JSON.stringify(plan.plan_details)}.`;
+            }
+        } catch(planError) {
+            console.error(`AI Call Handler: [${callId}] Error fetching customer plan for LLM context: ${planError.message}`);
+        }
 
+        // Pass conversation history to LLM
         const llmResponseText = await llmService.queryLLM(
-            customerText, // Or use the constructed llmPrompt if including history
+            customerText, // Current user utterance
             callId,
-            callData.callerIdNum,
-            { /* options like system prompt if not handled in llmService already */ }
+            callData.callerIdNum, // For logging/internal use by LLM service if needed beyond plan lookup
+            { system: systemPrompt, conversation_history: callData.history.slice(-10) } // Pass recent history
         );
-
-        updateCallState(callId, CALL_STATE.GENERATING_TTS);
-        await ttsService.speakOnChannel(callData.channel, llmResponseText, callId, callData.language);
+        // llmService.queryLLM is already logging the AI response as a transcript.
         callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language });
 
-        // Check for escalation trigger or end of call from LLM response
+        updateCallState(callId, CALL_STATE.GENERATING_TTS);
+        // This TTS playback should ideally be blocking or signal completion if the dialplan loop is very tight.
+        // For now, we assume the 1-second Wait in dialplan is a crude sync mechanism.
+        await ttsService.speakOnChannel(callData.channel, llmResponseText, callId, callData.language);
+
         if (llmResponseText.toLowerCase().includes("transfer to agent") || llmResponseText.toLowerCase().includes("speak to a representative")) {
             await escalateCall(callId, "llm_request_escalation");
         } else if (llmResponseText.toLowerCase().includes("goodbye") || llmResponseText.toLowerCase().includes("thank you for calling")) {
-            await endAiCall(callId, "completed_by_ai");
+            await endAiCall(callId, "completed_by_ai", callData.channel);
         } else {
-            // Loop back for next turn
-            await processNextAiTurn(callId);
+            // If conversation continues, set state to LISTENING.
+            // The Asterisk dialplan (extensions.conf) will loop back to the AGI script.
+            updateCallState(callId, CALL_STATE.LISTENING);
+            console.log(`AI Call Handler: [${callId}] AI turn complete. Awaiting next customer input via AGI.`);
         }
 
     } catch (error) {
-        console.error(`AI Call Handler: [${callId}] Error in AI turn:`, error);
-        await handleAiTurnError(callId, "I'm having trouble processing your request right now. Please try again in a moment.");
+        console.error(`AI Call Handler: [${callId}] Error processing recorded audio:`, error);
+        await handleAiTurnError(callId, process.env.ERROR_MESSAGE_TTS || "I'm having trouble processing your request right now. Please try again in a moment.", true);
     }
 }
 
 
 /**
- * Handles errors during an AI turn, plays an error message, and returns to listening or ends call.
+ * Handles errors during an AI turn, plays an error message, and prepares for next turn or ends call.
  * @param {string} callId
  * @param {string} errorMessageToSpeak
+ * @param {boolean} shouldRetryViaAgi - If true, sets state to LISTENING for AGI to take over.
  */
-async function handleAiTurnError(callId, errorMessageToSpeak) {
+async function handleAiTurnError(callId, errorMessageToSpeak, shouldRetryViaAgi = false) {
   const callData = activeAICalls.get(callId);
-  if (!callData || callData.state === CALL_STATE.ENDED) return;
+  if (!callData || callData.state === CALL_STATE.ENDED || callData.state === CALL_STATE.ESCALATING) return;
 
   try {
-    // Avoid speaking if already escalating or ending
     if (callData.state !== CALL_STATE.ESCALATING && callData.state !== CALL_STATE.ENDED) {
-        updateCallState(callId, CALL_STATE.SPEAKING); // AI is speaking an error
+        updateCallState(callId, CALL_STATE.SPEAKING);
         await ttsService.speakOnChannel(callData.channel, errorMessageToSpeak, callId, callData.language);
         await callService.createTranscript({ call_id: callId, speaker: 'ai', text: errorMessageToSpeak, timestamp_start: 0, timestamp_end: 0, language: callData.language });
         callData.history.push({ speaker: 'ai', text: errorMessageToSpeak, language: callData.language });
@@ -243,14 +214,14 @@ async function handleAiTurnError(callId, errorMessageToSpeak) {
     console.error(`AI Call Handler: [${callId}] Critical error: Failed to play error message via TTS:`, ttsError);
   }
 
-  // Decide whether to retry or end the call
-  // For now, let's retry once, then end if error persists (simple example)
   callData.errorCount = (callData.errorCount || 0) + 1;
-  if (callData.errorCount > 1) {
-      console.warn(`AI Call Handler: [${callId}] Multiple errors, ending call.`);
-      await endAiCall(callId, 'error_max_retries');
+  if (callData.errorCount > 1 || !shouldRetryViaAgi) {
+      console.warn(`AI Call Handler: [${callId}] Multiple errors or no retry, ending call.`);
+      await endAiCall(callId, 'error_max_retries', callData.channel);
   } else if (callData.state !== CALL_STATE.ESCALATING && callData.state !== CALL_STATE.ENDED) {
-      await processNextAiTurn(callId); // Try another turn (listen again)
+      updateCallState(callId, CALL_STATE.LISTENING);
+      console.log(`AI Call Handler: [${callId}] AI turn error, preparing for retry. Awaiting next customer input via AGI.`);
+      // The dialplan loop will handle re-calling AGI.
   }
 }
 
@@ -258,11 +229,49 @@ async function handleAiTurnError(callId, errorMessageToSpeak) {
  * Ends an AI call and cleans up resources.
  * @param {string} callId - The ID of the call to end.
  * @param {string} disposition - The final disposition of the call (e.g., 'completed', 'escalated', 'error').
+ * @param {string} [channel] - Optional channel identifier, useful if callData might not be in activeAICalls.
  */
-async function endAiCall(callId, disposition = 'completed') {
+async function endAiCall(callId, disposition = 'completed', channel = null) {
   const callData = activeAICalls.get(callId);
+
+  if (!callData && !channel) {
+    console.log(`AI Call Handler: Cannot end call ${callId}. No active call data and no channel provided.`);
+    return;
+  }
+
+  const currentChannel = callData ? callData.channel : channel;
+
   if (!callData) {
-    // console.log(`AI Call Handler: Call ${callId} not found or already ended.`);
+    // console.log(`AI Call Handler: Call ${callId} not found in active calls, but attempting to finalize based on event (e.g., hangup).`);
+    // If callData is not found, it might have been already removed (e.g. by escalation)
+    // or this is a hangup event for a call that wasn't fully tracked by AI handler.
+    // We can still try to update the DB record if it exists.
+    try {
+        // Check if a call record exists to update its end_time and status
+        const existingCall = await callService.getCallById(callId);
+        if (existingCall && existingCall.status !== 'completed' && existingCall.status !== 'failed' && existingCall.status !== 'escalated') {
+             await callService.updateCall(callId, {
+                status: disposition === 'error' ? 'failed' : (disposition.startsWith('completed') ? 'completed' : disposition),
+                end_time: new Date(),
+                final_disposition: disposition,
+             });
+             console.log(`AI Call Handler: [${callId}] Call log updated for inactive/untracked call. Status: ${disposition}`);
+        }
+    } catch (error) {
+        console.error(`AI Call Handler: [${callId}] Error updating DB for inactive/untracked call:`, error);
+    }
+    // No activeAICalls entry to delete if callData is null.
+    // Hanging up the channel explicitly might be risky if we don't know its exact state.
+    // The 'h' extension in dialplan is a safer bet for cleanup if channel is provided.
+    return;
+  }
+
+  // If callData exists:
+  console.log(`AI Call Handler: [${callId}] Ending call with disposition: ${disposition}. Current state: ${callData.state}`);
+
+  // Prevent further actions if already ending or ended by this logic
+  if (callData.state === CALL_STATE.ENDED) {
+    console.log(`AI Call Handler: [${callId}] Call already marked as ENDED.`);
     return;
   }
 
@@ -275,29 +284,60 @@ async function endAiCall(callId, disposition = 'completed') {
       return;
   }
 
-  updateCallState(callId, CALL_STATE.ENDED);
+  updateCallState(callId, CALL_STATE.ENDED); // Mark as ended in our state machine
 
   try {
-    // Stop any active recording for this call/channel
-    if (callData.channel) { // Ensure channel info is available
-        await sttService.stopRecording(callData.channel);
+    // Set AI_CALL_ACTIVE to false to stop dialplan loop
+    if (callData.channel) {
+        console.log(`AI Call Handler: [${callId}] Setting AI_CALL_ACTIVE=false on channel ${callData.channel}`);
+        await amiService.sendAction({
+            action: 'SetVar',
+            channel: callData.channel,
+            variable: 'AI_CALL_ACTIVE',
+            value: 'false'
+        }).catch(err => console.error(`AI Call Handler: [${callId}] Error setting AI_CALL_ACTIVE=false:`, err)); // Log error but continue
     }
 
+    // Stop any active recording for this call/channel (sttService.stopRecording was for Monitor, may not be needed for AGI's Record)
+    // The AGI 'RECORD FILE' command stops on its own (silence, timeout, escape digit).
+    // If sttService.stopRecording was intended for Monitor, it's likely safe to remove or make conditional.
+    // For now, commenting out as AGI handles its own recording lifecycle.
+    // if (callData.channel) {
+    //     await sttService.stopRecording(callData.channel);
+    // }
+
     // Update call log in database
+    const dbStatus = disposition.startsWith('error') ? 'failed' :
+                     disposition.startsWith('completed') ? 'completed' :
+                     disposition; // Handles 'escalated' directly
+
     await callService.updateCall(callId, {
-      status: disposition === 'error' ? 'failed' : disposition, // Map to DB status enum
+      status: dbStatus,
       end_time: new Date(),
       final_disposition: disposition,
     });
-    console.log(`AI Call Handler: [${callId}] Call log updated. Status: ${disposition}`);
+    console.log(`AI Call Handler: [${callId}] Call log updated. Status: ${dbStatus}, Disposition: ${disposition}`);
+
+    // Explicitly hang up the channel via AMI if AI is ending the call
+    // (e.g., 'completed_by_ai', 'error_max_retries')
+    // Don't hang up if it was an 'escalated' disposition, as Redirect handles that.
+    // Also, don't hang up if disposition is like 'hangups_cause_X' as Asterisk already hung up.
+    if (currentChannel && (disposition === 'completed_by_ai' || disposition === 'error_max_retries' || disposition === 'error_setup')) {
+        console.log(`AI Call Handler: [${callId}] AI ending call. Issuing Hangup for channel ${currentChannel}`);
+        await amiService.sendAction({
+            action: 'Hangup',
+            channel: currentChannel,
+            // cause: 16 // Normal Clearing, if needed
+        }).catch(err => console.error(`AI Call Handler: [${callId}] Error sending Hangup command:`, err));
+    }
+
   } catch (error) {
     console.error(`AI Call Handler: [${callId}] Error during call cleanup:`, error);
   } finally {
-    activeAICalls.delete(callId);
-    console.log(`AI Call Handler: [${callId}] Removed from active calls. Total active: ${activeAICalls.size}`);
-    // Note: Do not hang up the channel from here directly using AMI 'Hangup' action
-    // unless absolutely necessary and you know the dialplan won't handle it.
-    // Usually, Asterisk dialplan or the channel itself (e.g., user hangs up) terminates the channel.
+    if (activeAICalls.has(callId)) {
+        activeAICalls.delete(callId);
+        console.log(`AI Call Handler: [${callId}] Removed from active AI calls. Total active: ${activeAICalls.size}`);
+    }
   }
 }
 
@@ -375,7 +415,7 @@ async function escalateCall(callId, reason = 'escalated_by_ai') {
 
     // Update call record in DB before attempting transfer
     await callService.updateCall(callId, {
-      status: 'escalating', // Intermediate status
+      status: 'escalating',
       final_disposition: reason,
     });
 
@@ -399,29 +439,39 @@ async function escalateCall(callId, reason = 'escalated_by_ai') {
       // The 'endAiCall' function will be called by a Hangup event from Asterisk eventually.
       // Or, if Redirect means AMI loses control, we might need to update status here.
       // For now, assume Hangup event will finalize.
-      // We mark it as ended in our active calls map because AI handler is done.
-      activeAICalls.delete(callId); // AI hands off control
-       console.log(`AI Call Handler: [${callId}] Removed from active AI calls after escalation handoff. Total active: ${activeAICalls.size}`);
+      // The call is now outside of the AI's direct dialplan loop.
+      activeAICalls.delete(callId);
+      console.log(`AI Call Handler: [${callId}] Removed from active AI calls after successful escalation redirect. Total active: ${activeAICalls.size}`);
+      // No need to set AI_CALL_ACTIVE to false here as the call is no longer in our AI context.
 
     } else {
       console.error(`AI Call Handler: [${callId}] Failed to redirect call to queue. AMI Response:`, amiResponse);
-      // If redirect fails, what to do? Try again? Play error? Hang up?
-      // For now, log error and potentially revert state or try to end call gracefully.
       updateCallState(callId, oldState); // Revert state if redirect failed
-      throw new Error(`Failed to redirect call: ${amiResponse.message}`);
+      // Attempt to inform user and then end the call from AI side.
+      await ttsService.speakOnChannel(callData.channel, "Sorry, I was unable to transfer your call. Please try again later.", callId, callData.language)
+        .catch(speakErr => console.error(`AI Call Handler: [${callId}] Failed to play escalation failure message: ${speakErr.message}`));
+      await endAiCall(callId, 'escalation_failed_technical', callData.channel); // End call if redirect fails
+      throw new Error(`Failed to redirect call: ${amiResponse.message}`); // Propagate error
     }
 
   } catch (error) {
     console.error(`AI Call Handler: [${callId}] Error during escalation process:`, error);
-    updateCallState(callId, oldState); // Revert state on error
-    // Potentially play an error message to the user if the call is still active
-    try {
-        await ttsService.speakOnChannel(callData.channel, "Sorry, I was unable to transfer your call at this moment. Please try again later.", callId, callData.language);
-    } catch (speakError) {
-        console.error(`AI Call Handler: [${callId}] Failed to play escalation error message:`, speakError);
+    // Ensure state is reverted if not already done
+    if (callData.state !== CALL_STATE.ENDED) {
+        updateCallState(callId, oldState);
     }
-    // Consider ending the call if escalation fails critically
-    await endAiCall(callId, 'escalation_failed');
+    // Potentially play an error message to the user if the call is still active and not already ended
+    if (callData.state !== CALL_STATE.ENDED) {
+        try {
+            await ttsService.speakOnChannel(callData.channel, process.env.ERROR_MESSAGE_TTS || "Sorry, an error occurred during the transfer attempt.", callId, callData.language);
+        } catch (speakError) {
+            console.error(`AI Call Handler: [${callId}] Failed to play escalation error message:`, speakError);
+        }
+    }
+    // End the call if it hasn't been ended by a more specific failure handler
+    if (callData.state !== CALL_STATE.ENDED) {
+        await endAiCall(callId, 'escalation_error', callData.channel);
+    }
   }
 }
 

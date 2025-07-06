@@ -65,6 +65,8 @@ app.use('/api/calls', callRoutes);
 app.use('/api/analytics', analyticsRoutes);
 const feedbackRoutes = require('./routes/feedbackRoutes'); // Import feedback routes
 app.use('/api/feedback', feedbackRoutes); // Mount feedback routes
+const internalRoutes = require('./routes/internalRoutes'); // Import internal routes
+app.use('/api/internal', internalRoutes); // Mount internal routes
 
 app.get('/', (req, res) => {
   res.send('AI Call Center Backend Running');

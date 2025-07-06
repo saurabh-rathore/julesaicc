@@ -1,0 +1,158 @@
+.feedback-form-container {
+  max-width: 600px;
+  margin: 20px auto;
+  padding: 25px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background-color: #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  h3 {
+    color: #333;
+    margin-top: 0;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #eee;
+    font-size: 1.5em;
+    text-align: center;
+  }
+
+  .form-group {
+    margin-bottom: 1.75rem;
+
+    label {
+      display: block;
+      margin-bottom: 0.6rem;
+      font-weight: 600;
+      color: #454545;
+      font-size: 0.95em;
+    }
+
+    input[type="number"], // Though we use select for rating
+    select,
+    textarea {
+      width: 100%;
+      padding: 0.8rem 1rem;
+      border: 1px solid #ccc;
+      border-radius: 5px;
+      box-sizing: border-box;
+      font-size: 1rem;
+      transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+
+      &:focus {
+        border-color: #007bff;
+        outline: none;
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+      }
+    }
+
+    textarea {
+        min-height: 100px;
+        resize: vertical;
+    }
+
+    .is-invalid {
+      border-color: #dc3545 !important; // Ensure override
+    }
+
+    .invalid-feedback {
+      color: #dc3545;
+      font-size: 0.8em;
+      margin-top: 0.3rem;
+      display: block; // Ensure it shows up
+    }
+  }
+
+  .form-actions {
+    margin-top: 30px;
+    text-align: right;
+
+    button[type="submit"] {
+      background-color: #28a745; // Green for submit/update
+      color: white;
+      padding: 12px 25px;
+      border: none;
+      border-radius: 5px;
+      font-size: 1.05em;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background-color 0.3s, transform 0.1s;
+
+      &:hover {
+        background-color: #218838;
+        transform: translateY(-1px);
+      }
+
+      &:active {
+        transform: translateY(0px);
+      }
+
+      &:disabled {
+        background-color: #c0c0c0;
+        cursor: not-allowed;
+        transform: translateY(0px);
+      }
+    }
+  }
+
+  .message-area { // Common container for messages
+    padding: 12px;
+    border-radius: 4px;
+    margin-top: 20px;
+    text-align: center;
+    font-size: 0.95em;
+  }
+
+  .success-message {
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    @extend .message-area;
+  }
+
+  .error-message {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    @extend .message-area;
+  }
+
+  .loading-indicator {
+    text-align: center;
+    padding: 20px;
+    font-style: italic;
+    color: #555;
+    font-size: 1.1em;
+  }
+
+  .existing-feedback-info {
+    margin-top: 30px;
+    padding: 20px;
+    border: 1px solid #e9ecef;
+    background-color: #f8f9fa;
+    border-radius: 5px;
+
+    h4 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      color: #333;
+      font-size: 1.2em;
+      border-bottom: 1px solid #dee2e6;
+      padding-bottom: 8px;
+    }
+    p {
+      margin-bottom: 10px;
+      font-size: 1em;
+      line-height: 1.6;
+      strong {
+        color: #222;
+      }
+    }
+    em {
+        font-size: 0.9em;
+        color: #6c757d;
+        display: block;
+        margin-top:10px;
+    }
+  }
+}

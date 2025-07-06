@@ -1,11 +1,13 @@
 import { Component } from '@angular/core';
+import { CommonModule } from '@angular/common';
 
 @Component({
   selector: 'app-fine-tuning',
-  imports: [],
+  standalone: true,
+  imports: [CommonModule],
   templateUrl: './fine-tuning.html',
-  styleUrl: './fine-tuning.scss'
+  styleUrls: ['./fine-tuning.scss'] // Corrected
 })
-export class FineTuning {
-
+export class FineTuningComponent { // Renamed class
+  constructor() { }
 }

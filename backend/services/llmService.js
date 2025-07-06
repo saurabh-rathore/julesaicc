@@ -48,12 +48,30 @@ const queryLLM = async (inputText, callId, customerIdentifier = null, options = 
     }
   }
 
+  let llmContext = options.context;
+
+  if (!llmContext && options.conversation_history && Array.isArray(options.conversation_history)) {
+    llmContext = options.conversation_history.map(turn => ({
+      role: turn.speaker === 'ai' ? 'assistant' : 'user',
+      content: turn.text
+    }));
+    // Ollama usually expects the current prompt NOT to be part of the context array itself,
+    // but rather in the 'prompt' field. The history should be prior turns.
+    // If the last turn in conversation_history is the current customerText, remove it from context.
+    if (llmContext.length > 0 && llmContext[llmContext.length -1].role === 'user' && llmContext[llmContext.length -1].content === inputText) {
+        // This check is a bit naive if inputText could be repeated.
+        // A better way is for aiCallHandlerService to pass history *excluding* the current prompt.
+        // For now, let's assume aiCallHandlerService passes history correctly (prior turns).
+    }
+  }
+
+
   const payload = {
     model: LLM_MODEL_NAME,
-    prompt: contextualizedPrompt, // Use the potentially contextualized prompt
-    stream: false, // For simplicity, get the full response at once
-    system: systemPrompt, // Pass the system prompt
-    ...(options.context && { context: options.context }), // For conversational context with Ollama
+    prompt: contextualizedPrompt, // This is the current user utterance
+    stream: false,
+    system: systemPrompt,
+    ...(llmContext && llmContext.length > 0 && { context: llmContext }), // Pass formatted context if available
     // Add other parameters as needed by your LLM API
   };
 

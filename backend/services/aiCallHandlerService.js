@@ -175,6 +175,17 @@ async function processRecordedAudio(callId, audioFilePath, agiDetectedLanguage) 
         // For now, we assume the 1-second Wait in dialplan is a crude sync mechanism.
         await ttsService.speakOnChannel(callData.channel, llmResponseText, callId, callData.language);
 
+        // Estimate TTS duration and wait to allow playback before dialplan might loop too quickly
+        // This is a pragmatic approach; more robust solutions involve AGI's blocking playback or specific AMI events.
+        const words = llmResponseText.split(' ').length;
+        const averageWPM = parseInt(process.env.TTS_WORDS_PER_MINUTE || "150"); // Average words per minute for speech
+        const estimatedDurationSeconds = Math.max(1, (words / averageWPM) * 60); // Ensure at least 1 second
+        const waitMs = Math.ceil(estimatedDurationSeconds * 1000) + (parseInt(process.env.TTS_BUFFER_MS || "500")); // Add buffer
+
+        console.log(`AI Call Handler: [${callId}] LLM response: "${llmResponseText.substring(0,50)}..."`);
+        console.log(`AI Call Handler: [${callId}] Estimated TTS duration: ${estimatedDurationSeconds.toFixed(1)}s. Waiting ${waitMs}ms for TTS playback to progress.`);
+        await new Promise(resolve => setTimeout(resolve, waitMs));
+
         if (llmResponseText.toLowerCase().includes("transfer to agent") || llmResponseText.toLowerCase().includes("speak to a representative")) {
             await escalateCall(callId, "llm_request_escalation");
         } else if (llmResponseText.toLowerCase().includes("goodbye") || llmResponseText.toLowerCase().includes("thank you for calling")) {

@@ -191,6 +191,63 @@ This project implements an intelligent, multilingual AI-powered voice call cente
 *   **Coqui TTS:** Ensure a Coqui TTS server is running and accessible at the URL specified in `COQUI_TTS_URL` in the backend's `.env` file. Make sure it has the required voice models for the languages you intend to use.
 *   **LLM:** Ensure your chosen LLM is running and accessible at the URL specified in `LLM_API_URL`. For Ollama, ensure the model specified in `LLM_MODEL_NAME` is pulled (`ollama pull llama2`).
 
+### Detailed AI Model Setup Guide
+
+This section provides more specific guidance for setting up the AI models used by the backend. Ensure these services are running and accessible from the machine where the backend Node.js application is deployed.
+
+**1. Whisper (Speech-to-Text - STT)**
+
+*   **Method:** The backend currently uses the Whisper CLI tool.
+*   **Installation:**
+    *   Install Python (3.7 - 3.10 recommended for Whisper).
+    *   Install `ffmpeg`: `sudo apt update && sudo apt install ffmpeg`
+    *   Install Whisper: `pip install -U openai-whisper`
+    *   (Optional, for GPU support): If you have an NVIDIA GPU, ensure CUDA toolkit is installed and install PyTorch with CUDA support before installing Whisper: `pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118` (adjust cuXXX version as per your CUDA version).
+*   **Models:**
+    *   Whisper models (`tiny`, `base`, `small`, `medium`, `large`, and their `.en` English-only versions) will be downloaded automatically by the CLI on first use to a default cache directory (e.g., `~/.cache/whisper`).
+    *   The `WHISPER_MODEL` variable in your backend `.env` file (e.g., `base.en`) determines which model is used.
+*   **Permissions:** The Node.js process must have permission to execute the `whisper` command. If `whisper` is installed in a virtual environment, ensure the Node.js process runs with that environment activated or provide the full path to the `whisper` executable.
+*   **Configuration (`backend/.env`):**
+    *   `WHISPER_MODEL`: e.g., `base.en`, `small`, `medium.en`
+    *   `RECORDING_PATH`: e.g., `/tmp/asterisk_recordings` (must be writable by Asterisk/AGI and readable by the Node.js backend process running Whisper).
+
+**2. Coqui TTS (Text-to-Speech - TTS)**
+
+*   **Method:** The backend communicates with a running Coqui TTS server API.
+*   **Server Setup (Example using Docker):**
+    *   Pull the Coqui TTS Docker image. Check Coqui's GitHub page for the latest recommended image and models: [https://github.com/coqui-ai/TTS](https://github.com/coqui-ai/TTS)
+    *   Example (CPU): `docker run -d -p 5002:5002 ghcr.io/coqui-ai/tts-cpu tts-server --model_name tts_models/en/ljspeech/tacotron2-DDC`
+    *   Example (GPU, if available): `docker run -d -p 5002:5002 --gpus all ghcr.io/coqui-ai/tts-gpu tts-server --model_name tts_models/en/ljspeech/tacotron2-DDC`
+    *   Replace `--model_name` with the desired Coqui TTS model. You can list available models or specify multilingual models as per Coqui TTS documentation.
+    *   If using Coqui Studio models, you might need to provide a `COQUI_STUDIO_TOKEN` environment variable to the Docker container.
+*   **Configuration (`backend/.env`):**
+    *   `COQUI_TTS_URL`: URL of your Coqui TTS server's API endpoint (e.g., `http://localhost:5002/api/tts`).
+    *   `TTS_AUDIO_PATH`: Path where the backend will temporarily store generated TTS audio files before they are played by Asterisk AGI (e.g., `/tmp/tts_audio`). This path must be writable by the Node.js backend and readable by Asterisk (if AGI plays directly from this path).
+*   **Language & Voice:**
+    *   The `ttsService.js` sends `language_id` (e.g., `en`, `es`) and optionally `speaker_id` to the Coqui TTS server. Ensure the Coqui server has models loaded that correspond to these parameters.
+
+**3. Large Language Model (LLM)**
+
+*   **Method:** The backend communicates with an LLM via its HTTP API. The example setup targets Ollama.
+*   **Setup (Example using Ollama with Llama2):**
+    *   **Install Ollama:** Follow instructions on [https://ollama.com/](https://ollama.com/).
+    *   **Pull a Model:** `ollama pull llama2` (or any other model you wish to use, like `mistral`, `llama3`, etc.).
+    *   **Run Ollama Server:** Typically, Ollama runs as a background service after installation. Ensure it's running.
+*   **Configuration (`backend/.env`):**
+    *   `LLM_API_URL`: The API endpoint of your LLM. For Ollama, this is usually `http://localhost:11434/api/generate` for non-streaming or `/api/chat` for chat completions. The current `llmService.js` is set up for `/api/generate`.
+    *   `LLM_MODEL_NAME`: The name of the model as recognized by your LLM server (e.g., `llama2`, `mistral:7b` for Ollama).
+    *   `LLM_API_KEY`: (Optional) If your LLM is a hosted service requiring an API key, add it here. The `llmService.js` will include it as a Bearer token if present.
+*   **Note on LLM API Structure:** The `llmService.js` is currently structured for an Ollama-like `/api/generate` endpoint. If you use a different LLM (e.g., OpenAI API, Hugging Face Inference Endpoints), you will need to adjust the payload structure and response parsing in `llmService.js` accordingly.
+
+**General Considerations for AI Models:**
+*   **Resource Requirements:** LLMs and some STT/TTS models can be resource-intensive (CPU, RAM, GPU). Ensure your deployment server has adequate resources.
+*   **Network Accessibility:** If AI models are running on different machines than the backend, ensure proper network configuration, firewalls, and that the URLs in `.env` are correct.
+*   **Permissions:** The Node.js backend process needs permissions to:
+    *   Execute the Whisper CLI.
+    *   Write to `TTS_AUDIO_PATH` and `RECORDING_PATH`.
+    *   Read from `RECORDING_PATH`.
+    *   The Asterisk process (running the AGI script) needs to write to `RECORDING_PATH` and read from `TTS_AUDIO_PATH` (if AGI `STREAM FILE` plays from there).
+
 ## API Documentation
 
 (Placeholder: API documentation will be added here. Consider using Swagger/OpenAPI.)

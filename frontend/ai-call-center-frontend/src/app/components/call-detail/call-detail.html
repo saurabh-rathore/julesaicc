@@ -1,0 +1,40 @@
+<div class="call-detail-container">
+  <div *ngIf="isLoading" class="loading-indicator">Loading call details...</div>
+  <div *ngIf="errorMessage" class="error-message">{{ errorMessage }}</div>
+
+  <div *ngIf="call && !isLoading">
+    <h2>Call Details: {{ call.id }}</h2>
+    <div class="details-grid">
+      <div><strong>Customer Phone:</strong> {{ call.customer_phone_number || 'N/A' }}</div>
+      <div><strong>SIP Call ID:</strong> {{ call.sip_call_id || 'N/A' }}</div>
+      <div><strong>Start Time:</strong> {{ call.start_time | date:'medium' }}</div>
+      <div><strong>End Time:</strong> {{ call.end_time ? (call.end_time | date:'medium') : 'Ongoing' }}</div>
+      <div><strong>Duration:</strong> {{ formatDuration(call.start_time, call.end_time) }}</div>
+      <div><strong>Status:</strong> {{ call.status }}</div>
+      <div><strong>Direction:</strong> {{ call.direction }}</div>
+      <div><strong>Language:</strong> {{ call.initial_language_preference || 'N/A' }}</div>
+      <div><strong>Disposition:</strong> {{ call.final_disposition || 'N/A' }}</div>
+      <div><strong>Recording URL:</strong>
+        <a *ngIf="call.recording_url" [href]="call.recording_url" target="_blank">Listen</a>
+        <span *ngIf="!call.recording_url">N/A</span>
+      </div>
+      <div><strong>Escalated To:</strong> {{ call.escalated_to_agent_id || 'N/A' }}</div>
+    </div>
+
+    <h3 *ngIf="call.transcripts && call.transcripts.length > 0">Transcripts</h3>
+    <div *ngIf="call.transcripts && call.transcripts.length === 0" class="no-transcripts">
+      No transcripts available for this call.
+    </div>
+    <ul *ngIf="call.transcripts && call.transcripts.length > 0" class="transcript-list">
+      <li *ngFor="let entry of call.transcripts" [ngClass]="'speaker-' + entry.speaker">
+        <span class="speaker">{{ entry.speaker }}:</span>
+        <span class="text">{{ entry.text }}</span>
+        <span class="timestamp">
+            (Lang: {{entry.language || 'N/A'}},
+            Time: {{ entry.timestamp_start | number:'1.1-1' }}s - {{ entry.timestamp_end | number:'1.1-1' }}s
+            <span *ngIf="entry.confidence_score">, Conf: {{ entry.confidence_score | percent:'1.0-2' }}</span>)
+        </span>
+      </li>
+    </ul>
+  </div>
+</div>

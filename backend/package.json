@@ -17,6 +17,7 @@
   "type": "commonjs",
   "dependencies": {
     "asterisk-manager": "^0.2.0",
+    "axios": "^1.10.0",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "cuid": "^3.0.0",

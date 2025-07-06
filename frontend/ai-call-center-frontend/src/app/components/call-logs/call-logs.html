@@ -1,1 +1,66 @@
-<p>call-logs works!</p>
+<div class="call-logs-container">
+  <h2>Call Logs</h2>
+
+  <div *ngIf="isLoading" class="loading-indicator">
+    Loading call logs...
+  </div>
+
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="!isLoading && callsResponse && callsResponse.calls.length === 0" class="no-calls">
+    No call logs found.
+  </div>
+
+  <div *ngIf="!isLoading && callsResponse && callsResponse.calls.length > 0">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Customer Phone</th>
+          <th>Start Time</th>
+          <th>End Time</th>
+          <th>Status</th>
+          <th>Direction</th>
+          <th>Disposition</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let call of callsResponse.calls">
+          <td>{{ call.id }}</td>
+          <td>{{ call.customer_phone_number || 'N/A' }}</td>
+          <td>{{ call.start_time | date:'medium' }}</td>
+          <td>{{ call.end_time ? (call.end_time | date:'medium') : 'N/A' }}</td>
+          <td>{{ call.status }}</td>
+          <td>{{ call.direction }}</td>
+          <td>{{ call.final_disposition || 'N/A' }}</td>
+          <td>
+            <!-- Placeholder for actions like view details -->
+            <button class="action-button" (click)="viewCallDetails(call.id)">View</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination-controls" *ngIf="callsResponse.pagination.totalPages > 1">
+      <button (click)="prevPage()" [disabled]="currentPage === 1">Previous</button>
+      <span *ngFor="let pageNum of getPages()">
+        <button (click)="goToPage(pageNum)" [class.active]="currentPage === pageNum">
+          {{ pageNum }}
+        </button>
+      </span>
+      <button (click)="nextPage()" [disabled]="currentPage === callsResponse.pagination.totalPages">Next</button>
+      <span class="page-info">
+        Page {{ callsResponse.pagination.page }} of {{ callsResponse.pagination.totalPages }}
+        (Total: {{ callsResponse.pagination.totalCalls }} calls)
+      </span>
+    </div>
+  </div>
+</div>
+
+<!--
+  Placeholder for a call detail view (modal or separate route)
+  <app-call-detail *ngIf="selectedCall" [call]="selectedCall"></app-call-detail>
+-->

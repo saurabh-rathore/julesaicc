@@ -1,55 +1,81 @@
 const aiCallHandlerService = require('../services/aiCallHandlerService');
 const callService = require('../services/callService'); // For updating call status on hangup
+const ttsService = require('../services/ttsService'); // For generateTtsForAgi
 
-// @desc    Handle notification from AGI script that recording is complete
-// @route   POST /api/internal/recording-complete
+// @desc    Called by AGI after recording user's speech. Triggers STT, Sentiment, LLM.
+// @desc    Responds with the next AI action/prompt text for AGI to handle.
+// @route   POST /api/internal/process-utterance
 // @access  Restricted (e.g., localhost or specific IPs)
-const recordingComplete = async (req, res) => {
-  const { callId, audioFilePath, channel, language } = req.body;
+const processUtteranceForAgi = async (req, res) => {
+  const { callId, audioFilePath, language, channel } = req.body;
 
-  if (!callId || !audioFilePath || !channel) {
-    console.error('InternalController: Missing callId, audioFilePath, or channel in recording-complete notification.');
-    return res.status(400).json({ message: 'Missing required parameters.' });
+  if (!callId || !audioFilePath) {
+    console.error('InternalController: Missing callId or audioFilePath in process-utterance notification.');
+    return res.status(400).json({ action: 'error', message: 'Missing callId or audioFilePath.' });
   }
 
-  console.log(`InternalController: Received recording-complete for callId: ${callId}, file: ${audioFilePath}, channel: ${channel}`);
+  console.log(`InternalController: Received /process-utterance for callId: ${callId}, file: ${audioFilePath}, lang: ${language}, channel: ${channel}`);
 
   try {
-    // Trigger the next step in the AI call handling process
-    // This was previously part of processNextAiTurn, now split
-    // The aiCallHandlerService.handleCustomerSpeech was a placeholder, let's adapt it
-    // to a more generic "processRecordedAudio" or similar.
-    // For now, let's assume aiCallHandlerService.handleCustomerSpeech can be called here.
-    // Renamed to processRecordedAudio in aiCallHandlerService
+    // aiCallHandlerService.processRecordedAudio was the old name
+    // It should now be something like:
+    const aiActionResponse = await aiCallHandlerService.handleRecordedUtterance(callId, audioFilePath, language, channel);
 
-    // The AGI script should pass callId, audioFilePath, and language.
-    // Channel might also be useful for verification but callId is key.
-
-    aiCallHandlerService.processRecordedAudio(callId, audioFilePath, language)
-      .then(() => {
-        console.log(`InternalController: Successfully initiated processing for recorded audio ${audioFilePath} for call ${callId}`);
-      })
-      .catch(error => {
-        console.error(`InternalController: Error triggering speech processing for ${callId}:`, error);
-        // Error is already handled within handleCustomerSpeech/handleAiTurnError,
-        // which might try to play an error message or escalate.
-      });
-
-    // Respond quickly to AGI, don't wait for full processing.
-    res.status(200).json({ message: 'Recording notification received, processing initiated.' });
-
+    console.log(`InternalController: Sending action to AGI for call ${callId}:`, JSON.stringify(aiActionResponse));
+    res.status(200).json(aiActionResponse);
   } catch (error) {
-    console.error('InternalController: Error in recording-complete handler:', error);
-    res.status(500).json({ message: 'Server error processing recording completion.' });
+    console.error(`InternalController: Error in process-utterance handler for call ${callId}:`, error);
+    res.status(500).json({ action: 'error', message: 'Server error processing utterance.' });
+  }
+};
+
+// @desc    Called by AGI to request the next action/prompt from the AI.
+// @route   GET /api/internal/ai-next-action
+// @access  Restricted
+const getNextAiActionForAgi = async (req, res) => {
+    const { callId, channel } = req.query;
+    if (!callId || !channel) {
+        console.error('InternalController: Missing callId or channel for getNextAiAction.');
+        return res.status(400).json({ action: 'error', message: 'Missing callId or channel.' });
+    }
+    console.log(`InternalController: Received /ai-next-action for callId: ${callId}, channel: ${channel}`);
+    try {
+        const action = await aiCallHandlerService.determineNextAiAction(callId, channel);
+        res.status(200).json(action);
+    } catch (error) {
+        console.error(`InternalController: Error in getNextAiAction for call ${callId}:`, error);
+        res.status(500).json({ action: 'error', message: 'Server error determining next AI action.' });
+    }
+};
+
+
+// @desc    Called by AGI to generate TTS audio for a given text.
+// @route   POST /api/internal/generate-tts
+// @access  Restricted
+const generateTtsForAgi = async (req, res) => {
+  const { text, callId, language = 'en', speakerId = null } = req.body;
+
+  if (!text || !callId) {
+    console.error('InternalController: Missing text or callId for TTS generation.');
+    return res.status(400).json({ error: 'Missing text or callId for TTS.' });
+  }
+
+  try {
+    const audioFilePath = await ttsService.textToSpeech(text, callId, language, speakerId);
+    console.log(`InternalController: TTS audio generated for call ${callId} at ${audioFilePath}`);
+    res.status(200).json({ audioFilePath });
+  } catch (error) {
+    console.error(`InternalController: Error generating TTS for call ${callId}:`, error);
+    res.status(500).json({ error: 'Server error generating TTS audio.' });
   }
 };
 
 
-// @desc    Handle call event notifications from Asterisk (e.g., Hangup)
+// @desc    Handle call event notifications from Asterisk (e.g., Hangup via 'h' extension)
 // @route   POST /api/internal/call-event
 // @access  Restricted
 const callEvent = async (req, res) => {
-    const { callId, channel, event, cause } = req.body; // 'cause' for hangup
+    const { callId, channel, event, cause } = req.body;
 
     if (!callId || !event) {
         console.error('InternalController: Missing callId or event type in call-event notification.');
@@ -60,13 +86,9 @@ const callEvent = async (req, res) => {
 
     try {
         if (event.toLowerCase() === 'hangup') {
-            // Get hangup cause description if needed
-            // const hangupCauseText = getHangupCauseText(cause); // You'd need a mapping for this
-            await aiCallHandlerService.endAiCall(callId, `hangups_cause_${cause || 'unknown'}`);
+            await aiCallHandlerService.endAiCall(callId, `hangup_event_cause_${cause || 'unknown'}`, channel);
         }
-        // Handle other events if necessary (e.g., DTMF, specific errors)
-
-        res.status(200).json({ message: 'Call event received and processed.' });
+        res.status(200).json({ message: 'Call event received.' });
     } catch (error) {
         console.error(`InternalController: Error processing call event for callId ${callId}:`, error);
         res.status(500).json({ message: 'Server error processing call event.' });
@@ -75,6 +97,8 @@ const callEvent = async (req, res) => {
 
 
 module.exports = {
-  recordingComplete,
+  processUtteranceForAgi, // Renamed from recordingComplete
+  generateTtsForAgi,
+  getNextAiActionForAgi,
   callEvent,
 };

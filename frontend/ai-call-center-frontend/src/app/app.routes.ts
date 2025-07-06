@@ -1,8 +1,9 @@
 import { Routes } from '@angular/router';
 import { LoginComponent } from './components/login/login';
 import { DashboardComponent } from './components/dashboard/dashboard';
-import { CallLogsComponent } from './components/call-logs/call-logs'; // Import CallLogsComponent
-import { CallDetailComponent } from './components/call-detail/call-detail'; // Import CallDetailComponent
+import { CallLogsComponent } from './components/call-logs/call-logs';
+import { CallDetailComponent } from './components/call-detail/call-detail';
+import { FineTuningComponent } from './components/fine-tuning/fine-tuning'; // Import FineTuningComponent
 import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
@@ -23,6 +24,11 @@ export const routes: Routes = [
   {
     path: 'calls/:id', // Route for a single call detail
     component: CallDetailComponent,
+    canActivate: [authGuard],
+  },
+  {
+    path: 'fine-tuning',
+    component: FineTuningComponent,
     canActivate: [authGuard],
   },
   {

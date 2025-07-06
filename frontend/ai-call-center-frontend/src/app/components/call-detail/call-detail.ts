@@ -2,13 +2,14 @@ import { Component, Input, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Call, Transcript, CallService } from '../../services/call.service'; // Adjust path as needed
 import { ActivatedRoute } from '@angular/router'; // If fetching by ID from route params
+import { FeedbackComponent } from '../feedback/feedback'; // Import FeedbackComponent
 
 @Component({
   selector: 'app-call-detail',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, FeedbackComponent], // Add FeedbackComponent to imports
   templateUrl: './call-detail.html',
-  styleUrls: ['./call-detail.scss'] // Corrected from styleUrl
+  styleUrls: ['./call-detail.scss']
 })
 export class CallDetailComponent implements OnInit { // Changed class name
   @Input() callId?: string; // Allow passing callId as input, e.g., for modal

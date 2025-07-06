@@ -1,17 +1,76 @@
 <div class="dashboard-container">
   <header class="dashboard-header">
-    <h1>Welcome to the Dashboard</h1>
+    <h1>AI Call Center Dashboard</h1>
     <button (click)="logout()" class="logout-button">Logout</button>
   </header>
 
-  <div *ngIf="currentUser" class="user-info">
-    <p><strong>User:</strong> {{ currentUser.user.username }}</p>
-    <p><strong>Email:</strong> {{ currentUser.user.email }}</p>
-    <p><strong>Role:</strong> {{ currentUser.user.role }}</p>
+  <div *ngIf="currentUser" class="user-info welcome-message">
+    <p>Welcome, <strong>{{ currentUser.user.username }}</strong> (Role: {{ currentUser.user.role }})!</p>
+    <button (click)="refreshData()" class="refresh-button" [disabled]="isLoadingStats || isLoadingRates || isLoadingFeedback">
+      {{ (isLoadingStats || isLoadingRates || isLoadingFeedback) ? 'Refreshing...' : 'Refresh Data' }}
+    </button>
+  </div>
+
+  <div class="analytics-grid">
+    <!-- Call Statistics Card -->
+    <div class="stat-card">
+      <h2>Call Statistics</h2>
+      <div *ngIf="isLoadingStats" class="loading-indicator">Loading statistics...</div>
+      <div *ngIf="statsError && !isLoadingStats" class="error-message">{{ statsError }}</div>
+      <div *ngIf="callStats$ | async as stats; else noCallStatsData">
+        <p><strong>Total Calls Processed:</strong> {{ stats.totalCalls | number }}</p>
+        <p><strong>Average Call Duration:</strong> {{ stats.averageDurationSeconds | number:'1.0-1' }} seconds</p>
+        <p><strong>Total Escalations:</strong> {{ stats.totalEscalations | number }}</p>
+      </div>
+      <ng-template #noCallStatsData>
+        <div *ngIf="!isLoadingStats && !statsError">No call statistics available.</div>
+      </ng-template>
+    </div>
+
+    <!-- Resolution Rates Card -->
+    <div class="stat-card">
+      <h2>Resolution Rates</h2>
+      <div *ngIf="isLoadingRates" class="loading-indicator">Loading resolution rates...</div>
+      <div *ngIf="ratesError && !isLoadingRates" class="error-message">{{ ratesError }}</div>
+      <div *ngIf="resolutionRates$ | async as rates; else noResolutionRatesData">
+        <p><strong>AI Resolved:</strong> {{ rates.aiResolvedCount | number }}</p>
+        <p><strong>Human Resolved (Post-Escalation):</strong> {{ rates.humanResolvedCount | number }}</p
+        <p><strong>Total Escalated:</strong> {{ rates.escalatedCount | number }}</p>
+        <p><strong>Total Relevant Calls:</strong> {{ rates.totalRelevantCallsForResolutionRate | number }}</p>
+        <ng-container *ngIf="rates.totalRelevantCallsForResolutionRate > 0">
+          <p><strong>AI Resolution Rate:</strong> {{ (rates.aiResolvedCount / rates.totalRelevantCallsForResolutionRate) | percent:'1.1-2' }}</p>
+          <p><strong>Overall Resolution Rate (AI + Human):</strong> {{ ((rates.aiResolvedCount + rates.humanResolvedCount) / rates.totalRelevantCallsForResolutionRate) | percent:'1.1-2' }}</p>
+        </ng-container>
+      </div>
+      <ng-template #noResolutionRatesData>
+        <div *ngIf="!isLoadingRates && !ratesError">No resolution rate data available.</div>
+      </ng-template>
+    </div>
+
+    <!-- Feedback Summary Card -->
+    <div class="stat-card">
+      <h2>Feedback Summary</h2>
+      <div *ngIf="isLoadingFeedback" class="loading-indicator">Loading feedback summary...</div>
+      <div *ngIf="feedbackError && !isLoadingFeedback" class="error-message">{{ feedbackError }}</div>
+      <div *ngIf="feedbackSummary$ | async as summary; else noFeedbackSummaryData">
+        <p><strong>Average Rating:</strong>
+          <span *ngIf="summary.totalFeedbackEntries > 0">{{ summary.averageRating | number:'1.1-2' }} / 5</span>
+          <span *ngIf="summary.totalFeedbackEntries === 0">N/A (No feedback yet)</span>
+        </p>
+        <p><strong>Total Feedback Entries:</strong> {{ summary.totalFeedbackEntries | number }}</p>
+      </div>
+      <ng-template #noFeedbackSummaryData>
+        <div *ngIf="!isLoadingFeedback && !feedbackError">No feedback summary available.</div>
+      </ng-template>
+    </div>
   </div>
 
   <div class="dashboard-content">
-    <p>This is a protected dashboard area. More content will go here.</p>
-    <!-- Call logs, analytics charts, etc. will be added here later -->
+    <h2>Further Details & Reports</h2>
+    <p>Detailed reports and charts will be available here in future updates.</p>
+    <!-- Example: Placeholder for a chart component -->
+    <!-- <div class="chart-placeholder">
+      <app-call-volume-chart></app-call-volume-chart>
+    </div> -->
   </div>
 </div>

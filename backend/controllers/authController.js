@@ -1,6 +1,6 @@
 const userService = require('../services/userService');
 const { generateToken } = require('../utils/jwtUtils');
-const { validationResult } = require('express-validator'); // We'll add validation rules later in routes
+const { validationResult } = require('express-validator');
 
 // @desc    Authenticate user & get token (Login)
 // @route   POST /api/auth/login

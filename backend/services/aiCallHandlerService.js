@@ -6,8 +6,30 @@ const ttsService = require('./ttsService');
 const callService = require('./callService');
 const customerPlanService = require('./customerPlanService');
 const sentimentAnalysisService = require('./sentimentAnalysisService');
+const redis = require('redis');
 
-const activeAICalls = new Map(); // Key: callId, Value: { callId, channel, callerIdNum, language, state, history, errorCount, lastActivityTime }
+const redisClient = redis.createClient();
+redisClient.on('error', (err) => console.log('Redis Client Error', err));
+redisClient.connect();
+
+const activeAICalls = {
+  get: async (callId) => {
+    const callData = await redisClient.get(callId);
+    return callData ? JSON.parse(callData) : null;
+  },
+  set: async (callId, callData) => {
+    await redisClient.set(callId, JSON.stringify(callData), {
+      EX: 3600 // Expire in 1 hour
+    });
+  },
+  delete: async (callId) => {
+    await redisClient.del(callId);
+  },
+  has: async (callId) => {
+    const result = await redisClient.exists(callId);
+    return result === 1;
+  }
+};
 
 const CALL_STATE = {
   NEW: 'NEW', // Call object created, pre-greeting

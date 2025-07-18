@@ -5,6 +5,7 @@ import { CallLogsComponent } from './components/call-logs/call-logs';
 import { CallDetailComponent } from './components/call-detail/call-detail';
 import { FineTuningComponent } from './components/fine-tuning/fine-tuning'; // Import FineTuningComponent
 import { authGuard } from './guards/auth.guard';
+import { FeedbackComponent } from './components/feedback/feedback';
 
 export const routes: Routes = [
   {
@@ -29,6 +30,11 @@ export const routes: Routes = [
   {
     path: 'fine-tuning',
     component: FineTuningComponent,
+    canActivate: [authGuard],
+  },
+  {
+    path: 'feedback',
+    component: FeedbackComponent,
     canActivate: [authGuard],
   },
   {

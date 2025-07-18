@@ -1,18 +1,14 @@
 <div class="fine-tuning-container">
   <h2>AI Model Fine-Tuning</h2>
-  <p>
-    This section will provide controls for fine-tuning the AI models (STT, LLM, TTS) based on
-    collected data and feedback.
-  </p>
-  <p>
-    <em>(Functionality to be implemented in a future phase.)</em>
-  </p>
-  <!--
-  Potential future elements:
-  - Select model to fine-tune (Whisper, LLM, Coqui)
-  - Upload datasets
-  - View fine-tuning job status
-  - Manage model versions
-  - Performance metrics post-fine-tuning
-  -->
+  <form (ngSubmit)="onFineTune()">
+    <div class="form-group">
+      <label for="model">Select Model:</label>
+      <select id="model" [(ngModel)]="selectedModel" name="model">
+        <option value="stt">STT (Speech-to-Text)</option>
+        <option value="llm">LLM (Large Language Model)</option>
+        <option value="tts">TTS (Text-to-Speech)</option>
+      </select>
+    </div>
+    <button type="submit" [disabled]="!selectedModel">Start Fine-Tuning</button>
+  </form>
 </div>

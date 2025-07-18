@@ -1,67 +1,52 @@
-<div class="feedback-form-container">
-  <h3 *ngIf="callId">Feedback for Call: {{ callId }}</h3>
-  <h3 *ngIf="!callId">Submit Feedback (No Call ID Provided)</h3>
+<div class="feedback-container">
+  <h2>Feedback</h2>
 
-  <div *ngIf="isLoading && !existingFeedback" class="loading-indicator">Loading existing feedback...</div>
-
-  <form [formGroup]="feedbackForm" (ngSubmit)="onSubmit()" *ngIf="callId">
-    <div class="form-group">
-      <label for="rating">Rating (1-5):</label>
-      <select id="rating" formControlName="rating"
-              [ngClass]="{ 'is-invalid': feedbackForm.get('rating')?.invalid && feedbackForm.get('rating')?.touched }">
-        <option [ngValue]="null" disabled>Select a rating</option>
-        <option [ngValue]="1">1 - Poor</option>
-        <option [ngValue]="2">2 - Fair</option>
-        <option [ngValue]="3">3 - Good</option>
-        <option [ngValue]="4">4 - Very Good</option>
-        <option [ngValue]="5">5 - Excellent</option>
-      </select>
-      <div *ngIf="feedbackForm.get('rating')?.invalid && (feedbackForm.get('rating')?.dirty || feedbackForm.get('rating')?.touched)" class="invalid-feedback">
-        <div *ngIf="feedbackForm.get('rating')?.errors?.['required']">Rating is required.</div>
-      </div>
-    </div>
-
-    <div class="form-group">
-      <label for="comments">Comments:</label>
-      <textarea id="comments" formControlName="comments" rows="4" placeholder="Enter your comments (optional)"></textarea>
-    </div>
-
-    <div class="form-group">
-      <label for="customer_expressed_satisfaction">Customer Expressed Satisfaction?</label>
-      <select id="customer_expressed_satisfaction" formControlName="customer_expressed_satisfaction">
-        <option [ngValue]="null">N/A</option> <!-- Represents 'not set' or 'unknown' -->
-        <option [ngValue]="true">Yes</option>
-        <option [ngValue]="false">No</option>
-      </select>
-    </div>
-
-    <div class="form-actions">
-      <button type="submit" [disabled]="feedbackForm.invalid || isSubmitting">
-        {{ isSubmitting ? 'Submitting...' : (existingFeedback ? 'Update Feedback' : 'Submit Feedback') }}
-      </button>
-    </div>
-
-    <div *ngIf="successMessage" class="success-message">
-      {{ successMessage }}
-    </div>
-    <div *ngIf="errorMessage && !isLoading" class="error-message">
-      {{ errorMessage }}
-    </div>
-  </form>
-
-  <div *ngIf="!callId && !isLoading" class="error-message">
-    Please provide a Call ID to submit or view feedback.
+  <div *ngIf="isLoading" class="loading-indicator">
+    Loading feedback...
   </div>
 
-  <div *ngIf="existingFeedback && !isLoading && callId" class="existing-feedback-info">
-    <h4>Current Feedback Details:</h4>
-    <p><strong>Rating:</strong> {{ existingFeedback.rating }}</p>
-    <p><strong>Comments:</strong> {{ existingFeedback.comments || 'N/A' }}</p>
-    <p><strong>Satisfaction Expressed:</strong>
-        <span *ngIf="existingFeedback.customer_expressed_satisfaction === true">Yes</span>
-        <span *ngIf="existingFeedback.customer_expressed_satisfaction === false">No</span>
-        <span *ngIf="existingFeedback.customer_expressed_satisfaction === null || existingFeedback.customer_expressed_satisfaction === undefined">N/A</span>
-    </p>
-    <p><em>Last updated: {{ existingFeedback.collected_at | date:'medium' }}</em></p>
+  <div *ngIf="errorMessage" class="error-message">
+    {{ errorMessage }}
+  </div>
+
+  <div *ngIf="!isLoading && feedbackResponse && feedbackResponse.feedback.length === 0" class="no-feedback">
+    No feedback found.
+  </div>
+
+  <div *ngIf="!isLoading && feedbackResponse && feedbackResponse.feedback.length > 0">
+    <table>
+      <thead>
+        <tr>
+          <th>Call ID</th>
+          <th>Rating</th>
+          <th>Comments</th>
+          <th>Satisfaction</th>
+          <th>Collected At</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr *ngFor="let entry of feedbackResponse.feedback">
+          <td>{{ entry.call_id }}</td>
+          <td>{{ entry.rating }}</td>
+          <td>{{ entry.comments }}</td>
+          <td>{{ entry.customer_expressed_satisfaction }}</td>
+          <td>{{ entry.collected_at | date:'medium' }}</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination-controls" *ngIf="feedbackResponse.pagination.totalPages > 1">
+      <button (click)="prevPage()" [disabled]="currentPage === 1">Previous</button>
+      <span *ngFor="let pageNum of getPages()">
+        <button (click)="goToPage(pageNum)" [class.active]="currentPage === pageNum">
+          {{ pageNum }}
+        </button>
+      </span>
+      <button (click)="nextPage()" [disabled]="currentPage === feedbackResponse.pagination.totalPages">Next</button>
+      <span class="page-info">
+        Page {{ feedbackResponse.pagination.page }} of {{ feedbackResponse.pagination.totalPages }}
+        (Total: {{ feedbackResponse.pagination.totalFeedback }} entries)
+      </span>
+    </div>
   </div>
 </div>

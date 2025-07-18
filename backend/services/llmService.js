@@ -151,6 +151,27 @@ const queryLLM = async (inputText, callId, customerIdentifier = null, options = 
   }
 };
 
+const summarizeHistory = async (history) => {
+    // In a real implementation, this would make a separate call to the LLM
+    // with a specific prompt for summarization.
+    console.log("LLM Service: Summarizing conversation history...");
+
+    const conversationText = history.map(turn => `${turn.speaker}: ${turn.text}`).join('\n');
+    const prompt = `Please summarize the following conversation:\n\n${conversationText}`;
+
+    // Re-use the queryLLM logic but without customer context for summarization
+    // This is a simplification. A dedicated summarization model or prompt might be better.
+    try {
+        const summary = await queryLLM(prompt, null, null, { system: "You are a summarization assistant." });
+        console.log("LLM Service: Generated summary:", summary);
+        return summary;
+    } catch (error) {
+        console.error("LLM Service: Failed to summarize history:", error.message);
+        return "Could not summarize history."; // Fallback
+    }
+};
+
 module.exports = {
   queryLLM,
+  summarizeHistory,
 };

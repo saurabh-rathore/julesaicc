@@ -40,9 +40,9 @@ ASTERISK_SYSTEM_CONFIG_DIR="/etc/asterisk"
 
 # MySQL Credentials (ideally use .env or prompt, but for automation, can be set here or passed)
 # These should match those in backend/.env and database/install_db.sh if it reads them
-DB_ROOT_PASSWORD="your_mysql_root_password" # CHANGE THIS
+DB_ROOT_PASSWORD=$(openssl rand -hex 12)
 DB_APP_USER="ai_call_center_user"
-DB_APP_PASSWORD="ai_call_center_password_secure" # CHANGE THIS
+DB_APP_PASSWORD=$(openssl rand -hex 12)
 DB_NAME="ai_call_center"
 
 # --- Helper Functions ---

@@ -157,7 +157,8 @@ async function handleRecordedUtterance(callId, audioFilePath, agiLanguage, chann
 
     await callService.createTranscript({
       call_id: callId, speaker: 'customer', text: customerText,
-      timestamp_start: 0, timestamp_end: 0, // TODO: Proper timestamps from STT
+      timestamp_start: transcriptionResult.timestamp_start || 0,
+      timestamp_end: transcriptionResult.timestamp_end || 0,
       language: sttLanguage,
     });
     callData.history.push({ speaker: 'customer', text: customerText, language: sttLanguage });
@@ -183,9 +184,17 @@ async function handleRecordedUtterance(callId, audioFilePath, agiLanguage, chann
       if (plan) systemPrompt += ` Customer plan: ${plan.plan_name}, details: ${JSON.stringify(plan.plan_details)}.`;
     } catch (planError) { console.error(`AI Call Handler: [${callId}] Error fetching customer plan: ${planError.message}`); }
 
+    // Advanced context: last 3 turns + summary of earlier turns
+    const recentHistory = callData.history.slice(-6); // Last 3 user/AI pairs
+    const olderHistory = callData.history.slice(0, -6);
+    if (olderHistory.length > 0) {
+        const summary = await llmService.summarizeHistory(olderHistory);
+        systemPrompt += `\nSummary of earlier conversation: ${summary}`;
+    }
+
     const llmResponseText = await llmService.queryLLM(
       customerText, callId, callData.callerIdNum,
-      { system: systemPrompt, conversation_history: callData.history.slice(-10) }
+      { system: systemPrompt, conversation_history: recentHistory }
     );
     // llmService logs its own transcript as 'ai'
     callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language });

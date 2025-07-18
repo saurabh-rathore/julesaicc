@@ -138,50 +138,75 @@ async function playAgiTTS(textToSpeak) {
 }
 
 async function recordUserUtteranceAGI() {
-  await sendAgiCommand('STREAM FILE "beep" "#"');
-  const recordingFileBase = `${currentCallId}_utterance_agi_${Date.now()}`;
-  const recordingFormat = 'wav';
-  const finalRecordFileName = `${recordingFileBase}.${recordingFormat}`;
-  const fullRecordPath = path.join(AGI_RECORDING_PATH_PREFIX, finalRecordFileName);
+    await sendAgiCommand('STREAM FILE "beep" "#"');
+    const recordingFileBase = `${currentCallId}_utterance_agi_${Date.now()}`;
+    const recordingFormat = 'wav';
+    const finalRecordFileName = `${recordingFileBase}.${recordingFormat}`;
+    const fullRecordPath = path.join(AGI_RECORDING_PATH_PREFIX, finalRecordFileName);
 
-  const recordCommand = `RECORD FILE "${fullRecordPath.replace(/"/g, '\\"')}" ${recordingFormat} "#" ${CUSTOMER_UTTERANCE_DURATION_MS} 0 BEEP s=${MAX_SILENCE_SECONDS}`;
-  logAGIMessage(`Executing AGI Record: ${recordCommand}`);
-  const recordResultLine = await sendAgiCommand(recordCommand);
-  logAGIMessage(`AGI Record result line: ${recordResultLine}`);
+    let interrupted = false;
+    const recordCommand = `RECORD FILE "${fullRecordPath.replace(/"/g, '\\"')}" ${recordingFormat} "#" ${CUSTOMER_UTTERANCE_DURATION_MS} 0 BEEP s=${MAX_SILENCE_SECONDS}`;
+    logAGIMessage(`Executing AGI Record: ${recordCommand}`);
 
-  let recordingTerminationReason = 'unknown';
-  let dtmfDigit = null;
+    // Barge-in implementation: listen for DTMF during playback
+    const playAgiTTSWithBargeIn = async (textToSpeak) => {
+        if (!textToSpeak) return;
+        const ttsResponse = await makeHttpRequest(GENERATE_TTS_URL, 'POST', {
+            callId: currentCallId,
+            text: textToSpeak,
+            language: currentLanguage
+        });
+        if (ttsResponse && ttsResponse.audioFilePath) {
+            const streamCommand = `STREAM FILE "${ttsResponse.audioFilePath.replace(/"/g, '\\"')}" "1234567890*#"`;
+            const streamResult = await sendAgiCommand(streamCommand);
+            if (streamResult.includes("result-1")) { // DTMF digit pressed
+                interrupted = true;
+                logAGIMessage("Barge-in detected.");
+            }
+            try {
+                await fs.unlink(ttsResponse.audioFilePath);
+            } catch (unlinkErr) {
+                logAGIMessage(`Error deleting TTS file ${ttsResponse.audioFilePath}: ${unlinkErr.message}`);
+            }
+        }
+    };
 
-  if (recordResultLine.includes("result=0")) {
-    recordingTerminationReason = recordResultLine.includes("(timeout)") ? 'timeout' : 'silence';
-  } else if (recordResultLine.includes("result=-1")) {
-    recordingTerminationReason = 'hangup';
-    logAGIMessage('Recording failed: Channel hangup during recording.');
-    return { filePath: null, reason: recordingTerminationReason, dtmf: null };
-  } else {
-    const dtmfMatch = recordResultLine.match(/result=(\d+)/);
-    if (dtmfMatch && dtmfMatch[1]) {
-      const resultCode = parseInt(dtmfMatch[1], 10);
-      if (resultCode > 0) {
-        dtmfDigit = String.fromCharCode(resultCode);
-        recordingTerminationReason = 'dtmf';
-        logAGIMessage(`Recording terminated by DTMF: ${dtmfDigit}`);
-      }
+    const recordResultLine = await sendAgiCommand(recordCommand);
+    logAGIMessage(`AGI Record result line: ${recordResultLine}`);
+
+    let recordingTerminationReason = 'unknown';
+    let dtmfDigit = null;
+
+    if (recordResultLine.includes("result=0")) {
+        recordingTerminationReason = recordResultLine.includes("(timeout)") ? 'timeout' : 'silence';
+    } else if (recordResultLine.includes("result=-1")) {
+        recordingTerminationReason = 'hangup';
+        logAGIMessage('Recording failed: Channel hangup during recording.');
+        return { filePath: null, reason: recordingTerminationReason, dtmf: null };
+    } else {
+        const dtmfMatch = recordResultLine.match(/result=(\d+)/);
+        if (dtmfMatch && dtmfMatch[1]) {
+            const resultCode = parseInt(dtmfMatch[1], 10);
+            if (resultCode > 0) {
+                dtmfDigit = String.fromCharCode(resultCode);
+                recordingTerminationReason = 'dtmf';
+                logAGIMessage(`Recording terminated by DTMF: ${dtmfDigit}`);
+            }
+        }
     }
-  }
-  logAGIMessage(`Recording termination reason: ${recordingTerminationReason}`);
+    logAGIMessage(`Recording termination reason: ${recordingTerminationReason}`);
 
-  if (recordingTerminationReason !== 'hangup') {
-    try {
-      await fs.access(fullRecordPath);
-      logAGIMessage(`Recording file confirmed: ${fullRecordPath}`);
-      return { filePath: fullRecordPath, reason: recordingTerminationReason, dtmf: dtmfDigit };
-    } catch (fileAccessError) {
-      logAGIMessage(`Recorded file ${fullRecordPath} not found. Termination: ${recordingTerminationReason}`);
-      return { filePath: null, reason: 'file_not_found', dtmf: dtmfDigit };
+    if (recordingTerminationReason !== 'hangup') {
+        try {
+            await fs.access(fullRecordPath);
+            logAGIMessage(`Recording file confirmed: ${fullRecordPath}`);
+            return { filePath: fullRecordPath, reason: recordingTerminationReason, dtmf: dtmfDigit };
+        } catch (fileAccessError) {
+            logAGIMessage(`Recorded file ${fullRecordPath} not found. Termination: ${recordingTerminationReason}`);
+            return { filePath: null, reason: 'file_not_found', dtmf: dtmfDigit };
+        }
     }
-  }
-  return { filePath: null, reason: recordingTerminationReason, dtmf: dtmfDigit };
+    return { filePath: null, reason: recordingTerminationReason, dtmf: dtmfDigit };
 }
 
 async function mainAgiConversationLoop() {

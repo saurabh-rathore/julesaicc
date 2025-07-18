@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FineTuningService } from '../../services/fine-tuning.service';
 
 @Component({
   selector: 'app-fine-tuning',

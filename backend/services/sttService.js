@@ -115,7 +115,7 @@ const recordUtterance = async (channel, callId, durationMs = 7000) => {
  */
 const transcribeAudio = async (audioFilePath, language = 'en') => {
   if (!audioFilePath) {
-    throw new Error('Audio file path is required for transcription.');
+    return { text: '', language: language, segments: [] };
   }
   try {
     await fs.access(audioFilePath); // Check if file exists

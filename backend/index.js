@@ -4,6 +4,7 @@ const cors = require('cors');
 const authRoutes = require('./routes/authRoutes');
 const callRoutes = require('./routes/callRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
+const fineTuningRoutes = require('./routes/fineTuningRoutes');
 const { connectDB } = require('./config/db');
 const amiService = require('./services/amiService'); // Import AMI Service
 const callService = require('./services/callService'); // Import Call Service
@@ -63,6 +64,7 @@ amiService.on('close', () => {
 app.use('/api/auth', authRoutes);
 app.use('/api/calls', callRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/fine-tuning', fineTuningRoutes);
 const feedbackRoutes = require('./routes/feedbackRoutes'); // Import feedback routes
 app.use('/api/feedback', feedbackRoutes); // Mount feedback routes
 const internalRoutes = require('./routes/internalRoutes'); // Import internal routes

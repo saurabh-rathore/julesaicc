@@ -1,0 +1,24 @@
+{
+  "db": {
+    "host": "localhost",
+    "user": "ai_call_center_user",
+    "password": "your_production_password",
+    "database": "ai_call_center"
+  },
+  "ami": {
+    "host": "localhost",
+    "port": 5038,
+    "username": "admin",
+    "secret": "your_ami_secret"
+  },
+  "llm": {
+    "apiUrl": "http://localhost:11434/api/generate",
+    "modelName": "llama2"
+  },
+  "stt": {
+    "apiUrl": "http://localhost:9000/asr"
+  },
+  "tts": {
+    "apiUrl": "http://localhost:5002/api/tts"
+  }
+}

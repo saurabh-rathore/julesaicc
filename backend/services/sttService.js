@@ -92,19 +92,56 @@ const recordUtterance = async (channel, callId, durationMs = 7000) => {
 };
 
 // Monitor based recording (can be kept for full call recording if needed)
-// /**
-//  * Starts recording a channel using Asterisk's Monitor command.
-//  * @param {string} channel - The channel to record (e.g., 'SIP/somepeer-000000a1').
-//  * @param {string} callId - The unique ID of the call, used for naming the recording.
-//  * @returns {Promise<string>} The path to the recorded audio file.
-//  */
-// const startRecording = async (channel, callId) => { ... existing startRecording code ... };
-// /**
-//  * Stops recording a channel.
-//  * @param {string} channel - The channel to stop recording.
-//  * @returns {Promise<void>}
-//  */
-// const stopRecording = async (channel) => { ... existing stopRecording code ... };
+/**
+ * Starts recording a channel using Asterisk's Monitor command.
+ * @param {string} channel - The channel to record (e.g., 'SIP/somepeer-000000a1').
+ * @param {string} callId - The unique ID of the call, used for naming the recording.
+ * @returns {Promise<string>} The path to the recorded audio file.
+ */
+const startRecording = async (channel, callId) => {
+  await ensureRecordingPathExists();
+  const recordingFile = `${callId}_${Date.now()}`; // Unique filename
+  const recordingPath = path.join(RECORDING_PATH, recordingFile); // Path without extension
+
+  const action = {
+    action: 'Monitor',
+    channel: channel,
+    file: recordingPath,
+    format: 'wav',
+    mix: true, // Mix both legs of the call
+  };
+
+  console.log(`STT Service: Starting full call recording for channel ${channel}, file: ${recordingFile}.wav`);
+  try {
+    await amiService.sendAction(action);
+    // Monitor starts recording and returns immediately. The file path is returned for later reference.
+    // The actual file will be recordingPath + .wav
+    return `${recordingPath}.wav`;
+  } catch (error) {
+    console.error(`STT Service: Error sending Monitor command to AMI for channel ${channel}:`, error);
+    throw error;
+  }
+};
+/**
+ * Stops recording a channel.
+ * @param {string} channel - The channel to stop recording.
+ * @returns {Promise<void>}
+ */
+const stopRecording = async (channel) => {
+  const action = {
+    action: 'StopMonitor',
+    channel: channel,
+  };
+
+  console.log(`STT Service: Stopping recording for channel ${channel}`);
+  try {
+    await amiService.sendAction(action);
+  } catch (error) {
+    console.error(`STT Service: Error sending StopMonitor command to AMI for channel ${channel}:`, error);
+    // Decide if this should throw or just log. If recording fails to stop, the file might be corrupt.
+    // For now, we log it. A more robust implementation might raise an alert.
+  }
+};
 
 
 /**

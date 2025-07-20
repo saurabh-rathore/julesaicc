@@ -122,7 +122,7 @@ router.post(
         body('text').isString().notEmpty(),
         body('callId').isString().notEmpty(),
         body('language').optional().isString(),
-        body('speakerId').optional().isString().nullable(),
+        body('speakerId').optional({ nullable: true }).isString(),
     ],
     internalController.generateTtsForAgi
 );
@@ -199,7 +199,7 @@ router.post(
         body('language').optional().isString(),
         body('channel').optional().isString(),
         body('recordingTerminationReason').optional().isString(),
-        body('dtmfDigit').optional().isString().nullable(),
+        body('dtmfDigit').optional({ nullable: true }).isString(),
     ],
     internalController.processUtteranceForAgi
 );

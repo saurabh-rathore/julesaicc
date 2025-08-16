@@ -18,6 +18,17 @@ This project implements an intelligent, multilingual AI-powered voice call cente
 *   **Analytics & Reporting:** Provides insights via an Admin UI (Dashboard).
 *   **Admin UI:** Web-based interface for monitoring and management.
 
+## Admin UI Features
+
+The Angular-based Admin UI provides several key functionalities:
+
+*   **Dashboard:** A central view for real-time analytics, including call statistics, resolution rates, and feedback summaries.
+*   **Call Logs:** A detailed, searchable log of all calls processed by the system. You can view metadata and listen to recordings.
+*   **Call Details & Transcripts:** Drill down into a specific call to see its full transcript, with speaker turns and timings.
+*   **Fine-Tuning Page:** A dedicated section for managing the AI models.
+    *   **NLU Engine Selection:** Switch between using the general-purpose LLM for NLU or a dedicated, intent-based Rasa NLU model.
+    *   **File Upload:** Upload training data files (such as text documents or audio recordings) to be used for fine-tuning the AI models.
+
 ## Project Structure
 
 ```
@@ -238,6 +249,18 @@ This section provides more specific guidance for setting up the AI models used b
     *   `LLM_MODEL_NAME`: The name of the model as recognized by your LLM server (e.g., `llama2`, `mistral:7b` for Ollama).
     *   `LLM_API_KEY`: (Optional) If your LLM is a hosted service requiring an API key, add it here. The `llmService.js` will include it as a Bearer token if present.
 *   **Note on LLM API Structure:** The `llmService.js` is currently structured for an Ollama-like `/api/generate` endpoint. If you use a different LLM (e.g., OpenAI API, Hugging Face Inference Endpoints), you will need to adjust the payload structure and response parsing in `llmService.js` accordingly.
+
+**4. Rasa (Natural Language Understanding - NLU)**
+
+*   **Method:** The backend can be configured to use Rasa for intent recognition and entity extraction. This provides a more structured dialogue management flow compared to using a general-purpose LLM for NLU.
+*   **Server Setup:**
+    *   Install and run a Rasa Open Source server. Follow the instructions on [https://rasa.com/docs/rasa/](https://rasa.com/docs/rasa/).
+    *   You will need to train a Rasa model with your own intents, entities, and stories.
+    *   The backend expects to be able to call the Rasa server's HTTP API.
+*   **Configuration (`backend/.env`):**
+    *   `RASA_API_URL`: The URL of your Rasa server's `/model/parse` endpoint (e.g., `http://localhost:5005/model/parse`). This is required if you intend to use the 'Rasa' NLU mode.
+*   **Switching NLU Modes:**
+    *   The NLU engine can be switched between the general-purpose LLM and Rasa from the Admin UI on the "Fine-Tuning" page.
 
 **General Considerations for AI Models:**
 *   **Resource Requirements:** LLMs and some STT/TTS models can be resource-intensive (CPU, RAM, GPU). Ensure your deployment server has adequate resources.

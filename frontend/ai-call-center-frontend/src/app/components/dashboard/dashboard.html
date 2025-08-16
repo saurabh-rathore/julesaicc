@@ -34,7 +34,7 @@
       <div *ngIf="ratesError && !isLoadingRates" class="error-message">{{ ratesError }}</div>
       <div *ngIf="resolutionRates$ | async as rates; else noResolutionRatesData">
         <p><strong>AI Resolved:</strong> {{ rates.aiResolvedCount | number }}</p>
-        <p><strong>Human Resolved (Post-Escalation):</strong> {{ rates.humanResolvedCount | number }}</p
+        <p><strong>Human Resolved (Post-Escalation):</strong> {{ rates.humanResolvedCount | number }}</p>
         <p><strong>Total Escalated:</strong> {{ rates.escalatedCount | number }}</p>
         <p><strong>Total Relevant Calls:</strong> {{ rates.totalRelevantCallsForResolutionRate | number }}</p>
         <ng-container *ngIf="rates.totalRelevantCallsForResolutionRate > 0">

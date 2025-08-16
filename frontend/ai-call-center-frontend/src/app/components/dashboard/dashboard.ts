@@ -4,7 +4,7 @@ import { AuthService, AuthResponse } from '../../services/auth.service';
 import { AnalyticsService, CallStats, ResolutionRates, FeedbackSummary } from '../../services/analytics.service';
 import { Router } from '@angular/router';
 import { Observable, forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
+import { catchError, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'app-dashboard',

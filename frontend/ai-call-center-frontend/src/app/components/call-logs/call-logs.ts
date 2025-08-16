@@ -1,5 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { Router } from '@angular/router';
 import { CallService, Call, PaginatedCallsResponse } from '../../services/call.service'; // Adjust path as needed
 import { RouterModule } from '@angular/router'; // For potential navigation to call details
 

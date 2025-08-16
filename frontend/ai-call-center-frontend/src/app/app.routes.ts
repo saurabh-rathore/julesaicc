@@ -4,12 +4,17 @@ import { DashboardComponent } from './components/dashboard/dashboard';
 import { CallLogsComponent } from './components/call-logs/call-logs';
 import { CallDetailComponent } from './components/call-detail/call-detail';
 import { FineTuningComponent } from './components/fine-tuning/fine-tuning'; // Import FineTuningComponent
+import { RegisterComponent } from './components/register/register';
 import { authGuard } from './guards/auth.guard';
 
 export const routes: Routes = [
   {
     path: 'login',
     component: LoginComponent,
+  },
+  {
+    path: 'register',
+    component: RegisterComponent,
   },
   {
     path: 'dashboard',

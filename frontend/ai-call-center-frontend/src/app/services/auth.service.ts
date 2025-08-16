@@ -70,6 +70,12 @@ export class AuthService {
       );
   }
 
+  register(userData: any): Observable<any> {
+    return this.http.post(`${API_URL}/register`, userData).pipe(
+      catchError(this.handleError)
+    );
+  }
+
   logout(): void {
     localStorage.removeItem('currentUser');
     this.currentUserSubject.next(null);

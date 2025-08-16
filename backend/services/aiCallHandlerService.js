@@ -2,6 +2,7 @@ const fs = require('fs').promises;
 const amiService = require('./amiService');
 const sttService = require('./sttService');
 const llmService = require('./llmService');
+const nluService = require('./nluService'); // Import the new NLU service
 const ttsService = require('./ttsService');
 const callService = require('./callService');
 const customerPlanService = require('./customerPlanService');
@@ -143,7 +144,7 @@ async function handleRecordedUtterance(callId, audioFilePath, agiLanguage, chann
     if (!customerText) {
       console.log(`AI Call Handler: [${callId}] Empty transcription.`);
       callData.errorCount = (callData.errorCount || 0) + 1;
-      if (callData.errorCount > 2) { // Allow one retry for empty input
+      if (callData.errorCount > 2) {
         await endAiCall(callId, 'error_no_input_max_retries', callData.channel);
         return { action: 'speak_and_hangup', text: process.env.ERROR_MESSAGE_TTS || "Sorry, I'm having trouble understanding. Please call back." };
       }
@@ -157,48 +158,69 @@ async function handleRecordedUtterance(callId, audioFilePath, agiLanguage, chann
 
     await callService.createTranscript({
       call_id: callId, speaker: 'customer', text: customerText,
-      timestamp_start: 0, timestamp_end: 0, // TODO: Proper timestamps from STT
+      timestamp_start: 0, timestamp_end: 0,
       language: sttLanguage,
     });
     callData.history.push({ speaker: 'customer', text: customerText, language: sttLanguage });
 
+    // Sentiment analysis can still be useful for both modes
     const sentimentResult = await sentimentAnalysisService.analyzeSentiment(customerText);
-    if (sentimentResult && typeof sentimentResult.score === 'number') {
-      console.log(`AI Call Handler: [${callId}] Sentiment Score: ${sentimentResult.score}`);
-      const sentimentEscalationThreshold = parseInt(process.env.SENTIMENT_ESCALATION_THRESHOLD || "-2");
-      if (sentimentResult.score < sentimentEscalationThreshold && !sentimentResult.error) {
-        console.log(`AI Call Handler: [${callId}] Negative sentiment. Escalating.`);
-        // Escalation logic will be handled by AGI based on this response
+    if (sentimentResult && typeof sentimentResult.score === 'number' && sentimentResult.score < (parseInt(process.env.SENTIMENT_ESCALATION_THRESHOLD || "-2"))) {
         const escalationReason = `escalation_due_to_negative_sentiment (score: ${sentimentResult.score})`;
-        await callService.updateCall(callId, { status: 'escalating', final_disposition: escalationReason }); // Update DB
-        updateCallState(callId, CALL_STATE.ESCALATING); // Update local state
-        activeAICalls.delete(callId); // Remove from active AI handling
-         return { action: 'escalate', reason: escalationReason, text_to_speak_before_escalate: "Please wait while I transfer you to a human agent." };
-      }
+        await escalateCall(callId, escalationReason);
+        return { action: 'escalate', reason: escalationReason, text_to_speak_before_escalate: "Your call is very important to us. Please wait while I transfer you to a human agent." };
     }
 
+    // *** NEW NLU-DRIVEN LOGIC ***
     let systemPrompt = `You are a helpful AI assistant for a telecom company. The customer is speaking ${sttLanguage}.`;
     try {
-      const plan = await customerPlanService.findCustomerPlanByIdentifier(callData.callerIdNum);
-      if (plan) systemPrompt += ` Customer plan: ${plan.plan_name}, details: ${JSON.stringify(plan.plan_details)}.`;
+        const plan = await customerPlanService.findCustomerPlanByIdentifier(callData.callerIdNum);
+        if (plan) systemPrompt += ` Customer plan: ${plan.plan_name}, details: ${JSON.stringify(plan.plan_details)}.`;
     } catch (planError) { console.error(`AI Call Handler: [${callId}] Error fetching customer plan: ${planError.message}`); }
 
-    const llmResponseText = await llmService.queryLLM(
-      customerText, callId, callData.callerIdNum,
-      { system: systemPrompt, conversation_history: callData.history.slice(-10) }
+    const nluResult = await nluService.getNluResult(
+        customerText, callId,
+        { system: systemPrompt, conversation_history: callData.history.slice(-10), customerIdentifier: callData.callerIdNum }
     );
-    // llmService logs its own transcript as 'ai'
-    callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language });
 
-    if (llmResponseText.toLowerCase().includes("transfer to agent") || llmResponseText.toLowerCase().includes("speak to a representative")) {
-      await escalateCall(callId, "llm_request_escalation_keyword"); // This updates DB and activeAICalls
-      return { action: 'escalate', reason: 'llm_request_escalation_keyword', text_to_speak_before_escalate: llmResponseText };
-    } else if (llmResponseText.toLowerCase().includes("goodbye") || llmResponseText.toLowerCase().includes("thank you for calling")) {
-      await endAiCall(callId, "completed_by_ai", callData.channel);
-      return { action: 'speak_and_hangup', text: llmResponseText };
+    if (nluResult.style === 'llm') {
+        // --- LLM (OLD STYLE) LOGIC ---
+        const llmResponseText = nluResult.response;
+        callData.history.push({ speaker: 'ai', text: llmResponseText, language: callData.language });
+
+        if (llmResponseText.toLowerCase().includes("transfer to agent") || llmResponseText.toLowerCase().includes("speak to a representative")) {
+            await escalateCall(callId, "llm_request_escalation_keyword");
+            return { action: 'escalate', reason: 'llm_request_escalation_keyword', text_to_speak_before_escalate: llmResponseText };
+        } else if (llmResponseText.toLowerCase().includes("goodbye") || llmResponseText.toLowerCase().includes("thank you for calling")) {
+            await endAiCall(callId, "completed_by_ai", callData.channel);
+            return { action: 'speak_and_hangup', text: llmResponseText };
+        } else {
+            updateCallState(callId, CALL_STATE.AWAITING_USER_UTTERANCE);
+            return { action: 'speak_and_record', text: llmResponseText };
+        }
     } else {
-      updateCallState(callId, CALL_STATE.AWAITING_USER_UTTERANCE);
-      return { action: 'speak_and_record', text: llmResponseText };
+        // --- RASA (NEW STYLE) LOGIC ---
+        let aiResponseText = "I'm sorry, I'm not sure how to handle that request."; // Default response
+        switch (nluResult.intent.name) {
+            case 'request_escalation':
+                await escalateCall(callId, 'rasa_intent_escalation');
+                return { action: 'escalate', reason: 'rasa_intent_escalation', text_to_speak_before_escalate: "Please wait while I transfer you to an agent." };
+            case 'check_balance':
+                // In a real scenario, you'd call another service here to get the balance
+                aiResponseText = "Your current balance is fifty dollars.";
+                break;
+            case 'goodbye':
+                await endAiCall(callId, "completed_by_ai_rasa", callData.channel);
+                return { action: 'speak_and_hangup', text: "Thank you for calling. Goodbye!" };
+            default: // greet, or any other unhandled intent
+                aiResponseText = "I can help with things like checking your balance or escalating to an agent. What would you like to do?";
+                break;
+        }
+
+        callData.history.push({ speaker: 'ai', text: aiResponseText, language: callData.language });
+        await callService.createTranscript({ call_id: callId, speaker: 'ai', text: aiResponseText, language: callData.language, timestamp_start:0, timestamp_end:0 });
+        updateCallState(callId, CALL_STATE.AWAITING_USER_UTTERANCE);
+        return { action: 'speak_and_record', text: aiResponseText };
     }
 
   } catch (error) {

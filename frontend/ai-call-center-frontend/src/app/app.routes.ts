@@ -34,7 +34,7 @@ export const routes: Routes = [
   {
     path: 'fine-tuning',
     component: FineTuningComponent,
-    // canActivate: [authGuard], // Temporarily removed for debugging
+    canActivate: [authGuard],
   },
   {
     path: '',

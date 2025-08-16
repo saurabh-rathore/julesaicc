@@ -1,18 +1,59 @@
 <div class="fine-tuning-container">
   <h2>AI Model Fine-Tuning</h2>
   <p>
-    This section will provide controls for fine-tuning the AI models (STT, LLM, TTS) based on
-    collected data and feedback.
+    Upload your training data here. Accepted formats include text files (.txt), JSON (.json),
+    and audio files (.wav, .mp3, .ogg).
   </p>
-  <p>
-    <em>(Functionality to be implemented in a future phase.)</em>
-  </p>
-  <!--
-  Potential future elements:
-  - Select model to fine-tune (Whisper, LLM, Coqui)
-  - Upload datasets
-  - View fine-tuning job status
-  - Manage model versions
-  - Performance metrics post-fine-tuning
-  -->
+
+  <div class="config-section card">
+    <h3>NLU Model Configuration</h3>
+    <div class="form-group">
+      <label>Select NLU Engine:</label>
+      <div class="toggle-switch">
+        <input type="radio" id="nlu-llm" name="nluMode" value="llm" [checked]="currentNluMode === 'llm'" (change)="onNluModeChange('llm')">
+        <label for="nlu-llm">LLM (General Purpose)</label>
+        <input type="radio" id="nlu-rasa" name="nluMode" value="rasa" [checked]="currentNluMode === 'rasa'" (change)="onNluModeChange('rasa')">
+        <label for="nlu-rasa">Rasa (Intent-Based)</label>
+      </div>
+      <div *ngIf="settingsMessage" class="settings-feedback">
+        {{ settingsMessage }}
+      </div>
+    </div>
+  </div>
+
+  <div class="upload-section card">
+    <h3>Upload Training File</h3>
+    <div class="form-group">
+      <label for="file">Choose file</label>
+      <input type="file" id="file" (change)="onFileSelected($event)" class="form-control">
+    </div>
+
+    <div *ngIf="selectedFile" class="file-info">
+      <strong>Selected file:</strong> {{ selectedFile.name }} ({{ selectedFile.size | number }} bytes)
+    </div>
+
+    <div class="form-actions">
+      <button (click)="onUpload()" [disabled]="!selectedFile || isLoading" class="btn btn-primary">
+        {{ isLoading ? 'Uploading...' : 'Upload' }}
+      </button>
+    </div>
+
+    <div *ngIf="uploadProgress > 0" class="progress-bar-container">
+      <div class="progress-bar" [style.width.%]="uploadProgress">
+        {{ uploadProgress }}%
+      </div>
+    </div>
+
+    <div *ngIf="message" [ngClass]="isError ? 'error-message' : 'success-message'">
+      {{ message }}
+    </div>
+  </div>
+
+  <div class="info-section">
+    <h4>Next Steps</h4>
+    <p>
+      Once your file is uploaded, it will be added to a processing queue. The fine-tuning job
+      will start automatically based on the system's schedule. You will be notified upon completion.
+    </p>
+  </div>
 </div>

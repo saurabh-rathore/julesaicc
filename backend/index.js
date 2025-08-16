@@ -67,6 +67,10 @@ const feedbackRoutes = require('./routes/feedbackRoutes'); // Import feedback ro
 app.use('/api/feedback', feedbackRoutes); // Mount feedback routes
 const internalRoutes = require('./routes/internalRoutes'); // Import internal routes
 app.use('/api/internal', internalRoutes); // Mount internal routes
+const fineTuningRoutes = require('./routes/fineTuningRoutes'); // Import fine-tuning routes
+app.use('/api/fine-tuning', fineTuningRoutes); // Mount fine-tuning routes
+const settingsRoutes = require('./routes/settingsRoutes'); // Import settings routes
+app.use('/api/settings', settingsRoutes); // Mount settings routes
 
 app.get('/', (req, res) => {
   res.send('AI Call Center Backend Running');

@@ -1,12 +1,12 @@
 import { Injectable } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Observable, BehaviorSubject, throwError } from 'rxjs';
-import { catchError, map, tap } from 'rxjs/operators';
-// import { jwtDecode } from 'jwt-decode'; // Consider adding this if you need to decode tokens on client side
+import { catchError, tap } from 'rxjs/operators';
+import { environment } from '../../environments/environment';
 
-// Define backend API URL - should ideally come from environment config
-// For now, hardcoding for simplicity, assuming backend runs on port 3000
-const API_URL = 'http://localhost:3000/api/auth';
+// Define backend API URL from environment config
+const API_URL = `${environment.apiUrl}/auth`;
 
 export interface AuthResponse {
   token: string;

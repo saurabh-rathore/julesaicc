@@ -1,0 +1,48 @@
+// Jenkinsfile for setting up an Application Server.
+// This pipeline copies and executes the setup script on a target server.
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'APP_SERVER_IP', defaultValue: '', description: 'The public IP address of the target Application EC2 instance.')
+        string(name: 'SSH_USER', defaultValue: 'ubuntu', description: 'The SSH user for the target server.')
+        string(name: 'SSH_CREDENTIAL_ID', defaultValue: 'app-server-ssh-key', description: 'The ID of the "SSH Username with private key" credential in Jenkins for the App Server.')
+    }
+
+    stages {
+        stage('Checkout SCM') {
+            steps {
+                echo 'Checking out source code to access the setup script...'
+                checkout scm
+            }
+        }
+
+        stage('Deploy and Execute Setup Script') {
+            steps {
+                echo "Preparing to set up Application server at ${params.APP_SERVER_IP}..."
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIAL_ID, keyFileVariable: 'SSH_KEY_FILE')]) {
+                    script {
+                        echo 'Copying setup script to remote server...'
+                        // Use scp to copy the script to the remote server's /tmp directory.
+                        sh "scp -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} scripts/setup_app_server.sh ${params.SSH_USER}@${params.APP_SERVER_IP}:/tmp/"
+
+                        echo 'Executing setup script on remote server...'
+                        // Use ssh to execute the script on the remote server with sudo.
+                        sh "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} ${params.SSH_USER}@${params.APP_SERVER_IP} 'sudo /tmp/setup_app_server.sh'"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Application Server setup pipeline finished.'
+            // Clean up the script from the remote server.
+            withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIAL_ID, keyFileVariable: 'SSH_KEY_FILE')]) {
+                sh "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} ${params.SSH_USER}@${params.APP_SERVER_IP} 'rm /tmp/setup_app_server.sh'"
+            }
+        }
+    }
+}

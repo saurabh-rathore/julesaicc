@@ -1,0 +1,51 @@
+// Jenkinsfile for setting up an AI/ML Server.
+// This pipeline copies and executes the setup script on a target server.
+
+pipeline {
+    agent any
+
+    parameters {
+        string(name: 'AI_SERVER_IP', defaultValue: '', description: 'The public IP address of the target AI/ML EC2 instance.')
+        string(name: 'SSH_USER', defaultValue: 'ubuntu', description: 'The SSH user for the target server.')
+        // The SSH key for the AI server must be configured in Jenkins Credentials.
+        string(name: 'SSH_CREDENTIAL_ID', defaultValue: 'ai-server-ssh-key', description: 'The ID of the "SSH Username with private key" credential in Jenkins.')
+    }
+
+    stages {
+        stage('Checkout SCM') {
+            steps {
+                echo 'Checking out source code to access the setup script...'
+                checkout scm
+            }
+        }
+
+        stage('Deploy and Execute Setup Script') {
+            steps {
+                echo "Preparing to set up AI/ML server at ${params.AI_SERVER_IP}..."
+                // Use the withCredentials helper to securely handle the SSH key.
+                withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIAL_ID, keyFileVariable: 'SSH_KEY_FILE')]) {
+                    script {
+                        echo 'Copying setup script to remote server...'
+                        // Use scp to copy the script to the remote server's /tmp directory.
+                        sh "scp -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} scripts/setup_ai_models.sh ${params.SSH_USER}@${params.AI_SERVER_IP}:/tmp/"
+
+                        echo 'Executing setup script on remote server...'
+                        // Use ssh to execute the script on the remote server.
+                        // The 'sudo' command is used because the script needs root privileges to install packages.
+                        sh "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} ${params.SSH_USER}@${params.AI_SERVER_IP} 'sudo /tmp/setup_ai_models.sh'"
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'AI Server setup pipeline finished.'
+            // Optional: Clean up the script from the remote server's /tmp directory.
+            withCredentials([sshUserPrivateKey(credentialsId: params.SSH_CREDENTIAL_ID, keyFileVariable: 'SSH_KEY_FILE')]) {
+                sh "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} ${params.SSH_USER}@${params.AI_SERVER_IP} 'rm /tmp/setup_ai_models.sh'"
+            }
+        }
+    }
+}
